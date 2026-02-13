@@ -1,0 +1,49 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - DATABASE_URL=sqlite:///./data/news.db
+      - PYTHONUNBUFFERED=1
+      - DEBUG=false
+    depends_on:
+      - ollama
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - app-network
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
+
+networks:
+  app-network:
+    driver: bridge

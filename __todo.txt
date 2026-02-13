@@ -1,0 +1,12 @@
+
+  Better Alternatives to Consider:
+
+  1. Add stealth scripts to Playwright to hide automation signals (inject JavaScript to mask webdriver properties)
+  2. Use Firefox or WebKit instead of Chromium (different fingerprint)
+  3. Add human-like behavior: mouse movements, random scrolling, keystroke timing
+  4. Residential proxies (adds cost but significantly improves success rate)
+  5. Check if MarketWatch has an official API for news access (legitimate, sustainable approach)
+  6. Try their RSS feeds or alternative endpoints that might be less protected
+
+  My recommendation: Before switching tools, let me try adding stealth JavaScript injection to Playwright first. This is a common technique that masks automation properties and has a good success rate against many anti-bot systems. Would you like me to implement this approach
+   instead?

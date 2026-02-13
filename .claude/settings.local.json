@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(python -m app.init_db:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(npm install:*)",
+      "Bash(python:*)",
+      "Bash(iconv:*)",
+      "Bash(npm run build:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(curl:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

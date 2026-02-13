@@ -1,0 +1,87 @@
+Can you create a News API that will fetch News from different Sources. 
+
+#Basic functionality
+The user will provide URLs with News Information that the API will Need to fetch form the Website.
+There might be Cookie Banners to accept or Captchas to solve to get to the News.
+The API needes to fetch all relevant data from the Website and analyse it with an llm.
+The llm will be provided by Ollama (which is already available and doe not Need to be installed. The used model can be configured by the user.
+The fetched data will be stored in a database which runs locally as a flat file database.
+The data is kept in the database for a limited amount of time, which can be configured by the user.
+The fetched data is provided via a interface to other applicatations.
+There is also a web interface to Display the found News in a modern and organized way.
+The user can configure the frequency of all data Sources that were added by the user and at what times the data is fetched. Also the user can activate , deactivate or delete added data Sources in a config menu.
+There will be datasources which are simple websites, but there will also be links to Youtube videos which need to be doenloaded, transcribed and analysed.
+Video that were downloaded for analysis must be deleted after the analysis finished.
+
+#Architecture and tools
+I suggest using LangGraph to handle the relevant agents for the news gathering and analysis.
+Use a local database with flat files.
+Implement a caching mechanism.
+No authentication needed as this will run on a local network.
+LLM models via the local Ollama instance.
+Relevant LLM models that can handle data gathering, data analysis, sentiment analysis, voice to text (for videos), text understanding.
+I think ffmpeg will be needed to handle the video files.
+The API shold be provided as a docker.
+The API should provide the found information in a clear and structured format with all relevant information.
+
+#API content
+The API should fetch all relevant information from the website or the video:
+- sentiment on: general market or specific stocks (depending on what the article is about);
+- clearly identify the content: stock ticker and stock name, market segment covered, stock exchange, etc. (depending on the content of the article);
+- provide all content in the API: news content, main topic, stock tickers mentioned, sentiment on specific stocks or market in general, data source, time and date the information was fetched, date the article was published (if available), who created the article/video (if available), if it is an important information that might disrupt the market or have any bigger potential in influencing the market.
+
+#User interface
+Modern looking with an overview of the data sources. The possibility to add, edit, deactivate, delete data sources.
+A modern interface displaying the gathered news. This should be very structured, with a headline as first information and a possibility to see the full information on click.
+Status bar with live information on API calls.
+A possibility to easily adapt the schedule/frequency the API calls different data sources and the possibility to pause all together.
+A status of all data sources health in a very compact way, so the user sees if there is a problem. Color code the data sources health status: green->all good, orange->pending, red->data source not reachable or other error.
+A possibility to configure the information that is fetched from the data source and the information that is provided via the API.
+Include a help section on the website for the user to get information on how to include the API in his projects and how to call it properly.
+
+
+#Content
+The main content of the news webistes or videos will be news or information on the stock market. This can be on different stocks or on the stock market in general. The focus will be on the US stpck market, so most information wil be in english, but some are also in german.
+It is important when analysing the news data on different stocks, to clearly seperate the article between the information on different stocks (if the article is about multiple stocks). It is important not to mix up information on different stocks!
+
+Please make sure to plan with in depth and make a detailed todo list before starting to implement anyting. Please make a deep and detailed websearch on the best practices for this project. Plan in detail the architecture and interfaces and how to best present this to the user.
+
+
+----------------------
+ Future Enhancements (Out of Scope)
+
+ - Machine learning for article importance classification
+ - Multi-user support with authentication
+ - Email/Slack notifications for high-impact news
+ - Advanced charting for sentiment trends
+ - Mobile app
+ - Browser extension for quick article submission
+ - Integration with financial data APIs (stock prices, market data)
+ - Natural language query interface
+-----------------------
+
+How to run:
+docker-compose up -d
+docker exec -it newsapi-ollama-1 ollama pull llama3.1
+
+
+====================
+DATA SOURCE:
+https://www.marketwatch.com/
+
+Description
+Articles are in the latest news section at the top of the website. Please take the date and time from the article detail page indicated by "Last Updated" or if this is not available use "First Published". Both information are located at the upper part of the article in grey color. The field with the latest news articles is scrowable. News from days before today will have the date (Feb 12) and no time at the top of the article also in grey font. Make sure to only fetch articles with relevance for the stock market, as there are also general articles in this section.
+
+
+Reuters:
+https://www.reuters.com/markets/
+The articles start after the chart and the main indices. The first article usually has a much bigger heading with a big picture. The rest of the articles are on the right of tis main article and all have a small picture on the right side. They have a heading in black color and an indication on when the articles was published in grey color below the heading. The link to the article itself is connected to the heading.
+If there is a "Business" above the heading you can ignore the article as it is only for business users.
+
+
+Investing:
+https://www.investing.com/news/stock-market-news
+The articles are listed under the heading "Stock Market News" in the main column of the page. Each article has an image on the left and a heading in black font with the following data just below: date (i.e. Feb 13) and a short description and below that the source (i.e. By Reuters), and how long ago the article was published.
+At the end of the page there is a pagination, but we only need the current page. The link to the article itself is connected to the hading of the articles.
+====================
+
