@@ -14,7 +14,9 @@
       "Bash(curl:*)",
       "Bash(docker-compose build:*)",
       "Bash(docker-compose restart:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nFix workflow recursion limit and improve anti-bot protection\n\nKey improvements:\n- Increased LangGraph recursion_limit from 150 to 200 to support multi-article processing\n  (Each article requires ~8 recursion steps, 20 articles need 162+ recursions)\n- Fixed frontend \"Network Error\" when creating sources by adding trailing slash to API endpoint\n- Added filter to exclude soft-deleted sources from list view\n- Enhanced anti-bot detection evasion with retry logic for HTTP 401/403 errors\n- Added random delays (1-3s initial, 5-8s retry) to appear more human-like\n- Increased dynamic content wait time from 2s to 3s for protected sites\n- Added comprehensive HTTP headers to browser context (Accept, DNT, Sec-Fetch-*)\n- Enabled retry_on_403 parameter in article_fetcher for individual article pages\n\nFiles modified:\n- backend/app/agents/workflow.py: recursion_limit increased to 200\n- frontend/src/api/client.ts: added trailing slash to /sources/ endpoint\n- backend/app/api/v1/sources.py: filter deleted sources in list query\n- backend/app/services/scraping.py: anti-bot improvements and retry logic\n- backend/app/agents/article_fetcher.py: enabled retry for 403 errors\n\n🤖 Generated with Claude Code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
