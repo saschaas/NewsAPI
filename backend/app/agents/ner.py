@@ -59,21 +59,23 @@ CRITICAL INSTRUCTIONS:
 - Sentiment score: -1.0 (very negative) to +1.0 (very positive)
 - Sentiment label: very_negative, negative, neutral, positive, very_positive
 
-If NO stocks are mentioned, return an empty array: []
+If NO stocks are mentioned, return: {{"stocks": []}}
 
-Respond ONLY with valid JSON array:
-[
-  {{
-    "ticker_symbol": "AAPL",
-    "company_name": "Apple Inc.",
-    "stock_exchange": "NASDAQ",
-    "market_segment": "Technology",
-    "sentiment_score": 0.75,
-    "sentiment_label": "positive",
-    "confidence_score": 0.92,
-    "context_snippet": "Apple's Q4 earnings exceeded expectations with strong iPhone sales..."
-  }}
-]"""
+Respond ONLY with valid JSON object:
+{{
+  "stocks": [
+    {{
+      "ticker_symbol": "AAPL",
+      "company_name": "Apple Inc.",
+      "stock_exchange": "NASDAQ",
+      "market_segment": "Technology",
+      "sentiment_score": 0.75,
+      "sentiment_label": "positive",
+      "confidence_score": 0.92,
+      "context_snippet": "Apple's Q4 earnings exceeded expectations with strong iPhone sales..."
+    }}
+  ]
+}}"""
 
         # Call LLM with configured model
         model = get_model_for_step('ner')
@@ -85,28 +87,34 @@ Respond ONLY with valid JSON array:
         )
 
         if not result or not result.get('response'):
-            logger.warning("NER analysis failed: no response, assuming no stocks mentioned")
+            logger.warning(f"NER analysis failed: no response from Ollama (model={model}), assuming no stocks mentioned")
+            logger.debug(f"NER raw result: {result}")
             state['stock_mentions'] = []
             state['stage'] = 'ner_complete'
             state['stage_timings']['ner'] = time.time() - stage_start
             return state
 
+        logger.debug(f"NER raw response type: {type(result['response'])}, value: {str(result['response'])[:200]}")
+
         stock_mentions = result['response']
 
         # Handle different response formats
         if isinstance(stock_mentions, dict):
-            # LLM might wrap the array in an object like {"stocks": [...]}
-            # Try to extract the list from common keys
-            if 'stocks' in stock_mentions:
-                stock_mentions = stock_mentions['stocks']
-            elif 'mentions' in stock_mentions:
-                stock_mentions = stock_mentions['mentions']
-            elif 'stock_mentions' in stock_mentions:
-                stock_mentions = stock_mentions['stock_mentions']
+            # LLM wraps the array in an object — find the list value
+            # Try known keys first, then fall back to first list value
+            for key in ('stocks', 'mentions', 'stock_mentions', 'results'):
+                if key in stock_mentions and isinstance(stock_mentions[key], list):
+                    stock_mentions = stock_mentions[key]
+                    break
             else:
-                # If dict doesn't have expected keys, log and set empty
-                logger.warning(f"NER response is dict without expected keys: {list(stock_mentions.keys())}")
-                stock_mentions = []
+                # Fall back: use the first value that is a list
+                for value in stock_mentions.values():
+                    if isinstance(value, list):
+                        stock_mentions = value
+                        break
+                else:
+                    logger.warning(f"NER response is dict without any list values: {list(stock_mentions.keys())}")
+                    stock_mentions = []
 
         # Validate response is now a list
         if not isinstance(stock_mentions, list):

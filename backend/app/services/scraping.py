@@ -3,11 +3,17 @@ from bs4 import BeautifulSoup
 from typing import Optional, Dict, Any, List
 from loguru import logger
 import asyncio
+import random
 from datetime import datetime
+
+from app.config import settings
+from app.services.stealth import get_combined_stealth_script
+from app.services.user_agents import get_random_user_agent
+from app.services.human_behavior import simulate_human_behavior
 
 
 class WebScraperService:
-    """Service for web scraping using Playwright"""
+    """Service for web scraping using Playwright with anti-bot evasion"""
 
     # Common cookie banner selectors
     COOKIE_SELECTORS = [
@@ -39,33 +45,113 @@ class WebScraperService:
     def __init__(self):
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
+        self._playwright = None
+        self._proxy_pool: List[Dict[str, str]] = []
+        self._proxy_index: int = 0
+        self._build_proxy_pool()
+
+    def _build_proxy_pool(self):
+        """Build proxy pool from config."""
+        if settings.PROXY_URLS:
+            for url in settings.PROXY_URLS.split(","):
+                url = url.strip()
+                if url:
+                    proxy = {"server": url}
+                    if settings.PROXY_USERNAME:
+                        proxy["username"] = settings.PROXY_USERNAME
+                        proxy["password"] = settings.PROXY_PASSWORD or ""
+                    self._proxy_pool.append(proxy)
+        elif settings.PROXY_URL:
+            proxy = {"server": settings.PROXY_URL}
+            if settings.PROXY_USERNAME:
+                proxy["username"] = settings.PROXY_USERNAME
+                proxy["password"] = settings.PROXY_PASSWORD or ""
+            self._proxy_pool.append(proxy)
+
+    def _get_next_proxy(self) -> Optional[Dict[str, str]]:
+        """Get next proxy in round-robin rotation."""
+        if not self._proxy_pool:
+            return None
+        proxy = self._proxy_pool[self._proxy_index % len(self._proxy_pool)]
+        self._proxy_index += 1
+        return proxy
+
+    async def _create_context(self) -> BrowserContext:
+        """Create a new browser context with UA, proxy, and stealth settings."""
+        # Pick user agent matched to browser engine
+        if settings.USER_AGENT_ROTATION:
+            user_agent = get_random_user_agent(settings.BROWSER_ENGINE)
+        else:
+            user_agent = get_random_user_agent("chromium")
+
+        # Build proxy config
+        proxy = self._get_next_proxy()
+
+        context = await self.browser.new_context(
+            user_agent=user_agent,
+            viewport={'width': 1920, 'height': 1080},
+            locale='en-US',
+            proxy=proxy,
+            extra_http_headers={
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+            },
+        )
+
+        # Inject stealth scripts before any page scripts run
+        if settings.STEALTH_ENABLED:
+            await context.add_init_script(get_combined_stealth_script())
+            logger.debug("Stealth scripts injected into browser context")
+
+        logger.debug(f"Browser context created (UA: {user_agent[:60]}..., proxy: {'yes' if proxy else 'no'})")
+        return context
+
+    async def _recreate_context(self):
+        """Close old context and create a new one with fresh UA/proxy."""
+        if self.context:
+            try:
+                await self.context.close()
+            except Exception:
+                pass
+        self.context = await self._create_context()
 
     async def initialize(self):
-        """Initialize Playwright browser"""
+        """Initialize Playwright browser with configured engine."""
         if self.browser is None:
-            playwright = await async_playwright().start()
-            self.browser = await playwright.chromium.launch(
+            self._playwright = await async_playwright().start()
+
+            engine = settings.BROWSER_ENGINE
+            logger.info(f"Launching browser engine: {engine}")
+
+            # Only Chromium supports --no-sandbox args
+            launch_args = []
+            if engine == "chromium":
+                launch_args = ['--no-sandbox', '--disable-setuid-sandbox']
+
+            # Select browser engine
+            if engine == "firefox":
+                browser_type = self._playwright.firefox
+            elif engine == "webkit":
+                browser_type = self._playwright.webkit
+            else:
+                browser_type = self._playwright.chromium
+
+            self.browser = await browser_type.launch(
                 headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox']
+                args=launch_args if launch_args else None,
             )
-            self.context = await self.browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                viewport={'width': 1920, 'height': 1080},
-                locale='en-US',
-                extra_http_headers={
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'DNT': '1',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'none',
-                    'Sec-Fetch-User': '?1',
-                    'Cache-Control': 'max-age=0',
-                },
-            )
+
+            self.context = await self._create_context()
+            logger.info(f"Browser launched: {engine}")
 
     async def close(self):
         """Close browser"""
@@ -73,6 +159,8 @@ class WebScraperService:
             await self.context.close()
         if self.browser:
             await self.browser.close()
+        if self._playwright:
+            await self._playwright.stop()
 
     async def handle_cookie_banner(self, page: Page) -> bool:
         """
@@ -209,8 +297,7 @@ class WebScraperService:
 
         page = await self.context.new_page()
 
-        # Add random delay to appear more human-like (1-3 seconds)
-        import random
+        # Randomized pre-navigation delay (1-3 seconds)
         await asyncio.sleep(random.uniform(1.0, 3.0))
 
         try:
@@ -222,11 +309,13 @@ class WebScraperService:
                 status_code = response.status if response else 'No response'
                 logger.error(f"Failed to load {url}: HTTP {status_code}")
 
-                # Retry once with longer delay for 401/403 errors (anti-bot protection)
+                # Retry once with context recreation for 401/403 errors
                 if retry_on_403 and response and response.status in [401, 403]:
-                    logger.info(f"Retrying {url} after {response.status} error with longer delay...")
+                    logger.info(f"Retrying {url} after {response.status} error with fresh context...")
                     await page.close()
-                    # Wait longer between retries to appear more human
+                    # Recreate context with new UA and next proxy
+                    await self._recreate_context()
+                    # Wait longer between retries
                     await asyncio.sleep(random.uniform(5.0, 8.0))
                     return await self.scrape_url(url, wait_for_selector, timeout, take_screenshot, retry_on_403=False)
 
@@ -241,6 +330,10 @@ class WebScraperService:
             # Handle cookie banner
             await self.handle_cookie_banner(page)
 
+            # Simulate human behavior after cookie handling
+            if settings.HUMAN_BEHAVIOR_ENABLED:
+                await simulate_human_behavior(page)
+
             # Wait for specific selector if provided
             if wait_for_selector:
                 try:
@@ -248,9 +341,8 @@ class WebScraperService:
                 except Exception as e:
                     logger.warning(f"Timeout waiting for selector {wait_for_selector}: {e}")
 
-            # Wait for dynamic content and let any anti-bot checks complete
-            # Longer wait for better success with protected sites
-            await page.wait_for_timeout(3000)
+            # Randomized post-load wait (2-4s instead of fixed 3s)
+            await page.wait_for_timeout(random.randint(2000, 4000))
 
             # Take screenshot if requested (for vision models)
             screenshot_base64 = None

@@ -80,17 +80,54 @@ class OllamaService:
 
                 # Parse JSON response if format is json
                 if format == "json":
+                    raw = result.get("response", "")
                     try:
-                        result["response"] = json.loads(result["response"])
+                        result["response"] = json.loads(raw)
                     except json.JSONDecodeError:
-                        logger.error(f"Failed to parse JSON response: {result['response']}")
-                        return None
+                        # LLMs sometimes wrap JSON in markdown fences or add trailing text
+                        cleaned = self._extract_json(raw)
+                        if cleaned is not None:
+                            result["response"] = cleaned
+                        else:
+                            logger.error(f"Failed to parse JSON response: {raw[:500]}")
+                            return None
 
                 return result
 
         except Exception as e:
             logger.error(f"Error calling Ollama: {e}")
             return None
+
+    @staticmethod
+    def _extract_json(text: str):
+        """Try to extract valid JSON from a string that may contain extra text.
+
+        Handles common LLM issues: markdown fences, leading/trailing text,
+        arrays inside objects, etc.
+        """
+        import re
+
+        # Strip markdown code fences
+        text = re.sub(r'^```(?:json)?\s*', '', text.strip())
+        text = re.sub(r'\s*```$', '', text.strip())
+
+        # Try parsing the cleaned text directly
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # Try to find the first { or [ and last } or ]
+        for start_char, end_char in [('{', '}'), ('[', ']')]:
+            start = text.find(start_char)
+            end = text.rfind(end_char)
+            if start != -1 and end != -1 and end > start:
+                try:
+                    return json.loads(text[start:end + 1])
+                except json.JSONDecodeError:
+                    continue
+
+        return None
 
     async def list_models(self) -> Optional[list]:
         """
