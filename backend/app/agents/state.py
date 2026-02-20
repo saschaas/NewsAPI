@@ -12,6 +12,7 @@ class NewsProcessingState(TypedDict):
     source_url: str
     source_type: str  # 'website' or 'youtube'
     extraction_instructions: Optional[str]  # Optional user instructions for extraction
+    max_articles: int  # Max articles to process from a listing page
 
     # Scraper output
     raw_content: Optional[str]

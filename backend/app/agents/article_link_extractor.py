@@ -126,15 +126,15 @@ async def article_link_extractor_node(state: NewsProcessingState) -> NewsProcess
             return state
 
         # Use LLM for final validation if needed (only for edge cases)
-        article_links = [link['url'] for link in unique_links[:20]]  # Max 20 articles
+        max_articles = state.get('max_articles', 20)
+        article_links = [link['url'] for link in unique_links[:max_articles]]
 
-        logger.info(f"LLM identified {len(article_links)} article links")
+        logger.info(f"Found {len(article_links)} article links (max_articles={max_articles})")
 
         # Determine if this is a listing page
         if len(article_links) >= 2:
             state['is_listing_page'] = True
-            # Limit to first 20 articles to avoid excessive processing time
-            state['article_links'] = article_links[:20]
+            state['article_links'] = article_links[:max_articles]
             state['current_article_index'] = 0
             state['processed_articles'] = []
             logger.info(f"Identified as listing page with {len(article_links)} articles (limiting to {len(state['article_links'])})")

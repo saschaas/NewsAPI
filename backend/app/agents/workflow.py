@@ -109,6 +109,8 @@ workflow.add_conditional_edges(
     supervisor_router,
     {
         "article_link_extractor": "article_link_extractor",
+        "article_fetcher": "article_fetcher",  # RSS bypass: skip link extraction
+        "analyzer": "analyzer",                 # RSS single-article bypass
         "error_handler": "error_handler",
         "end": END
     }
@@ -175,20 +177,24 @@ app = workflow.compile()
 logger.info("LangGraph workflow compiled successfully with multi-article support (recursion_limit: 200)")
 
 
-async def process_news_article(source_id: int, source_url: str, source_type: str, extraction_instructions: str = None) -> NewsProcessingState:
+async def process_news_article(source_id: int, source_url: str, source_type: str, extraction_instructions: str = None, max_articles: int = None) -> NewsProcessingState:
     """
     Process a news article through the full LangGraph workflow
 
     Args:
         source_id: Database ID of the data source
         source_url: URL to process
-        source_type: 'website' or 'youtube'
+        source_type: 'website', 'youtube', or 'rss'
         extraction_instructions: Optional user instructions for article extraction
+        max_articles: Max articles to process from a listing page (None = global default)
 
     Returns:
         Final workflow state
     """
-    logger.info(f"Starting workflow for source {source_id}: {source_url}")
+    from app.config import settings
+    effective_max_articles = max_articles if max_articles is not None else settings.MAX_ARTICLES_PER_SOURCE
+
+    logger.info(f"Starting workflow for source {source_id}: {source_url} (max_articles={effective_max_articles})")
 
     # Initialize state
     initial_state: NewsProcessingState = {
@@ -196,6 +202,7 @@ async def process_news_article(source_id: int, source_url: str, source_type: str
         'source_url': source_url,
         'source_type': source_type,
         'extraction_instructions': extraction_instructions,
+        'max_articles': effective_max_articles,
         'raw_content': None,
         'raw_html': None,
         'screenshot': None,

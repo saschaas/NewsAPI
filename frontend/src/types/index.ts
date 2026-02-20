@@ -2,12 +2,13 @@ export interface DataSource {
   id: number;
   name: string;
   url: string;
-  source_type: 'website' | 'youtube';
+  source_type: 'website' | 'youtube' | 'rss';
   status: 'active' | 'paused' | 'deleted';
   health_status: 'healthy' | 'pending' | 'error';
   fetch_frequency_minutes: number;
   cron_expression: string | null;
   extraction_instructions: string | null;
+  max_articles: number | null;
   last_fetch_timestamp: string | null;
   last_fetch_status: 'success' | 'error' | 'captcha' | 'timeout' | null;
   error_message: string | null;
@@ -19,10 +20,11 @@ export interface DataSource {
 export interface DataSourceCreate {
   name: string;
   url: string;
-  source_type: 'website' | 'youtube';
+  source_type: 'website' | 'youtube' | 'rss';
   fetch_frequency_minutes: number;
   cron_expression: string | null;
   extraction_instructions?: string | null;
+  max_articles?: number | null;
 }
 
 export interface StockMention {

@@ -82,6 +82,7 @@ async def fetch_source_job(source_id: int):
             source_url = source.url
             source_type = source.source_type
             extraction_instructions = source.extraction_instructions
+            max_articles = source.max_articles
 
         finally:
             db.close()
@@ -91,7 +92,8 @@ async def fetch_source_job(source_id: int):
             source_id=source_id,
             source_url=source_url,
             source_type=source_type,
-            extraction_instructions=extraction_instructions
+            extraction_instructions=extraction_instructions,
+            max_articles=max_articles
         )
 
         # Handle auto-disable

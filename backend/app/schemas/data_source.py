@@ -7,11 +7,12 @@ class DataSourceBase(BaseModel):
     """Base schema for data source"""
     name: str
     url: str
-    source_type: Literal['website', 'youtube']
+    source_type: Literal['website', 'youtube', 'rss']
     fetch_frequency_minutes: int = 60
     cron_expression: Optional[str] = None
     config_json: Optional[str] = None
     extraction_instructions: Optional[str] = None
+    max_articles: Optional[int] = None
 
 
 class DataSourceCreate(DataSourceBase):
@@ -34,6 +35,7 @@ class DataSourceUpdate(BaseModel):
     cron_expression: Optional[str] = None
     config_json: Optional[str] = None
     extraction_instructions: Optional[str] = None
+    max_articles: Optional[int] = None
     status: Optional[Literal['active', 'paused', 'deleted']] = None
 
 

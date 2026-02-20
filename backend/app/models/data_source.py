@@ -20,11 +20,12 @@ class DataSource(Base):
     error_count = Column(Integer, default=0)
     config_json = Column(Text, nullable=True)
     extraction_instructions = Column(Text, nullable=True)
+    max_articles = Column(Integer, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        CheckConstraint("source_type IN ('website', 'youtube')", name='check_source_type'),
+        CheckConstraint("source_type IN ('website', 'youtube', 'rss')", name='check_source_type'),
         CheckConstraint("status IN ('active', 'paused', 'deleted')", name='check_status'),
         CheckConstraint("health_status IN ('healthy', 'pending', 'error')", name='check_health_status'),
         CheckConstraint("last_fetch_status IN ('success', 'error', 'captcha', 'timeout')", name='check_fetch_status'),

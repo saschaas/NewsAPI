@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # Processing
     MAX_CONCURRENT_FETCHES: int = 3
+    MAX_ARTICLES_PER_SOURCE: int = 20
     DATA_RETENTION_DAYS: int = 30
     AUTO_DISABLE_THRESHOLD: int = 5
     GLOBAL_PAUSE: bool = False
@@ -28,6 +29,22 @@ class Settings(BaseSettings):
     # Paths
     DOWNLOADS_DIR: str = "./downloads"
     DATA_DIR: str = "./data"
+
+    # Scraping / Anti-Bot
+    BROWSER_ENGINE: str = "chromium"          # "chromium", "firefox", or "webkit"
+    STEALTH_ENABLED: bool = True
+    HUMAN_BEHAVIOR_ENABLED: bool = True
+    USER_AGENT_ROTATION: bool = True
+
+    # Proxy (optional)
+    PROXY_URL: Optional[str] = None
+    PROXY_USERNAME: Optional[str] = None
+    PROXY_PASSWORD: Optional[str] = None
+    PROXY_URLS: Optional[str] = None         # Comma-separated for rotation
+
+    # RSS
+    RSS_ENABLED: bool = True
+    RSS_REQUEST_TIMEOUT: int = 30
 
     # CORS (for local development)
     CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:5173"]

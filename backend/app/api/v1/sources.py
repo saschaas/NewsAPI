@@ -202,7 +202,11 @@ async def test_source(
             # Import here to avoid circular dependency
             from app.agents.workflow import app as workflow_app
             from app.agents.state import NewsProcessingState
+            from app.config import settings
             import time
+
+            # Resolve effective max_articles
+            effective_max_articles = source.max_articles if source.max_articles is not None else settings.MAX_ARTICLES_PER_SOURCE
 
             # Send initial event
             yield f"data: {json.dumps({'type': 'init', 'message': 'Initializing workflow...'})}\n\n"
@@ -213,8 +217,10 @@ async def test_source(
                 'source_url': source.url,
                 'source_type': source.source_type,
                 'extraction_instructions': source.extraction_instructions,
+                'max_articles': effective_max_articles,
                 'raw_content': None,
                 'raw_html': None,
+                'screenshot': None,
                 'video_path': None,
                 'transcript': None,
                 'metadata': {},
@@ -244,7 +250,7 @@ async def test_source(
             current_article = 0
             final_state = None
 
-            async for event in workflow_app.astream(initial_state):
+            async for event in workflow_app.astream(initial_state, config={"recursion_limit": 200}):
                 # Extract node name and state from event
                 for node_name, node_state in event.items():
                     final_state = node_state  # Keep updating with latest state

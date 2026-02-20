@@ -3,7 +3,7 @@ from typing import Dict, Any
 from loguru import logger
 
 from app.agents.state import NewsProcessingState
-from app.services import web_scraper, youtube_service
+from app.services import web_scraper, youtube_service, rss_service
 from app.utils import generate_content_hash, normalize_content
 from app.utils.llm_config import get_model_for_step, is_vision_model
 
@@ -62,6 +62,35 @@ async def scraper_node(state: NewsProcessingState) -> NewsProcessingState:
             state['transcript'] = result['transcript']
             state['raw_content'] = result['transcript']
             state['metadata'] = result['metadata']
+
+        elif state['source_type'] == 'rss':
+            # Fetch RSS feed - bypasses browser-based scraping entirely
+            result = await rss_service.fetch_feed(state['source_url'])
+
+            if result['status'] != 'success':
+                state['errors'].append(f"RSS fetch failed: {result.get('error', 'Unknown error')}")
+                state['status'] = 'error'
+                state['stage'] = 'scraper_failed'
+                return state
+
+            entries = result.get('entries', [])
+            if not entries:
+                state['errors'].append("RSS feed returned no entries")
+                state['status'] = 'error'
+                state['stage'] = 'scraper_failed'
+                return state
+
+            # RSS provides article URLs directly - skip LLM-based link extraction
+            max_articles = state.get('max_articles', 20)
+            state['is_listing_page'] = True
+            state['article_links'] = [entry['url'] for entry in entries if entry.get('url')][:max_articles]
+            state['raw_content'] = f"RSS feed: {result.get('feed_title', '')} - {len(entries)} entries"
+            state['metadata'] = {'feed_title': result.get('feed_title', ''), 'entry_count': len(entries)}
+            state['stage'] = 'link_extraction_complete'
+            state['stage_timings']['scraper'] = time.time() - stage_start
+
+            logger.info(f"Scraper node: RSS feed parsed, {len(state['article_links'])} article links")
+            return state
 
         else:
             state['errors'].append(f"Unknown source type: {state['source_type']}")

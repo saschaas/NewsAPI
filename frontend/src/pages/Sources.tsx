@@ -292,6 +292,7 @@ function SourceForm({
     fetch_frequency_minutes: source?.fetch_frequency_minutes || 60,
     cron_expression: source?.cron_expression || null,
     extraction_instructions: source?.extraction_instructions || null,
+    max_articles: source?.max_articles ?? null,
   });
 
   const mutation = useMutation({
@@ -349,7 +350,7 @@ function SourceForm({
             value={formData.url}
             onChange={(e) => setFormData({ ...formData, url: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            placeholder="https://finance.yahoo.com/news or https://youtube.com/watch?v=..."
+            placeholder="https://finance.yahoo.com/news, https://youtube.com/watch?v=..., or RSS feed URL"
           />
         </div>
 
@@ -359,11 +360,12 @@ function SourceForm({
           </label>
           <select
             value={formData.source_type}
-            onChange={(e) => setFormData({ ...formData, source_type: e.target.value as 'website' | 'youtube' })}
+            onChange={(e) => setFormData({ ...formData, source_type: e.target.value as 'website' | 'youtube' | 'rss' })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="website">Website</option>
             <option value="youtube">YouTube</option>
+            <option value="rss">RSS Feed</option>
           </select>
         </div>
 
@@ -378,6 +380,23 @@ function SourceForm({
             onChange={(e) => setFormData({ ...formData, fetch_frequency_minutes: parseInt(e.target.value) })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Max Articles per Fetch (optional)
+          </label>
+          <input
+            type="number"
+            min="1"
+            value={formData.max_articles ?? ''}
+            onChange={(e) => setFormData({ ...formData, max_articles: e.target.value ? parseInt(e.target.value) : null })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            placeholder="Default: 20"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Maximum number of articles to process from a listing page. Leave empty for global default (20).
+          </p>
         </div>
 
         <div>
@@ -577,6 +596,12 @@ function SourceCard({ source }: { source: DataSource }) {
             <span className="text-gray-600">Frequency:</span>
             <span className="ml-2 font-medium">
               {source.cron_expression || `${source.fetch_frequency_minutes}min`}
+            </span>
+          </div>
+          <div>
+            <span className="text-gray-600">Max Articles:</span>
+            <span className="ml-2 font-medium">
+              {source.max_articles ?? 'Default (20)'}
             </span>
           </div>
           <div>
