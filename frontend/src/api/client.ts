@@ -98,7 +98,7 @@ export const stocksApi = {
   },
 
   articles: async (ticker: string, limit = 20): Promise<NewsArticle[]> => {
-    const { data } = await client.get(`/stocks/${ticker}/articles/`, { params: { limit } });
+    const { data } = await client.get(`/stocks/${ticker}/articles`, { params: { limit } });
     return data;
   },
 
