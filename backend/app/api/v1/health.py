@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from datetime import datetime
 import httpx
 
@@ -28,7 +29,7 @@ async def health_check(db: Session = Depends(get_db)):
     """Health check endpoint"""
     # Check database
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_status = "healthy"
     except Exception:
         db_status = "error"

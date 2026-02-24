@@ -23,6 +23,10 @@ beautifulsoup4==4.12.3
 lxml==5.3.0
 feedparser==6.0.11
 
+# Cloudflare Bypass
+curl_cffi>=0.7.0
+nodriver>=0.38
+
 # YouTube
 yt-dlp==2026.2.4
 
@@ -30,7 +34,7 @@ yt-dlp==2026.2.4
 apscheduler==3.10.4
 
 # WebSocket
-websockets==13.1
+websockets>=13.1
 python-multipart==0.0.12
 
 # Utilities

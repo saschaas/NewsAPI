@@ -52,21 +52,29 @@ class WebScraperService:
 
     def _build_proxy_pool(self):
         """Build proxy pool from config."""
-        if settings.PROXY_URLS:
-            for url in settings.PROXY_URLS.split(","):
+        proxy_urls = (settings.PROXY_URLS or "").strip()
+        proxy_url = (settings.PROXY_URL or "").strip()
+
+        if proxy_urls:
+            for url in proxy_urls.split(","):
                 url = url.strip()
-                if url:
+                if url and url.startswith(("http://", "https://", "socks5://")):
                     proxy = {"server": url}
                     if settings.PROXY_USERNAME:
                         proxy["username"] = settings.PROXY_USERNAME
                         proxy["password"] = settings.PROXY_PASSWORD or ""
                     self._proxy_pool.append(proxy)
-        elif settings.PROXY_URL:
-            proxy = {"server": settings.PROXY_URL}
-            if settings.PROXY_USERNAME:
-                proxy["username"] = settings.PROXY_USERNAME
-                proxy["password"] = settings.PROXY_PASSWORD or ""
-            self._proxy_pool.append(proxy)
+                elif url:
+                    logger.warning(f"Skipping invalid proxy URL (missing protocol): {url}")
+        elif proxy_url:
+            if proxy_url.startswith(("http://", "https://", "socks5://")):
+                proxy = {"server": proxy_url}
+                if settings.PROXY_USERNAME:
+                    proxy["username"] = settings.PROXY_USERNAME
+                    proxy["password"] = settings.PROXY_PASSWORD or ""
+                self._proxy_pool.append(proxy)
+            else:
+                logger.warning(f"Skipping invalid PROXY_URL (missing protocol): {proxy_url}")
 
     def _get_next_proxy(self) -> Optional[Dict[str, str]]:
         """Get next proxy in round-robin rotation."""
@@ -115,6 +123,100 @@ class WebScraperService:
         logger.debug(f"Browser context created (UA: {user_agent[:60]}..., proxy: {'yes' if proxy else 'no'})")
         return context
 
+    async def _wait_for_challenge(self, page: Page, timeout: int = 15000) -> bool:
+        """Wait for a JS challenge page (e.g. DataDome, Cloudflare) to resolve.
+
+        Returns True if the challenge resolved and real content appeared."""
+        try:
+            await page.wait_for_load_state('networkidle', timeout=timeout)
+        except Exception:
+            pass
+
+        # Check if meaningful content appeared after the challenge JS ran
+        content_length = await page.evaluate('() => document.body ? document.body.innerText.length : 0')
+        if content_length > 200:
+            return True
+
+        # Also check for common real-page indicators
+        has_content = await page.evaluate("""() => {
+            const selectors = ['article', 'main', '[role="main"]', 'h1', '.content', '.article'];
+            return selectors.some(s => document.querySelector(s) !== null);
+        }""")
+        return has_content
+
+    async def _is_cloudflare_block(self, page: Page, response) -> bool:
+        """Detect if a 403/503 is specifically from Cloudflare."""
+        # Check response headers
+        if response:
+            headers = response.headers
+            if headers.get("server", "").lower() == "cloudflare":
+                return True
+            if "cf-ray" in headers:
+                return True
+
+        # Check page HTML for Cloudflare challenge markers
+        try:
+            html = await page.content()
+            from app.services.cloudflare_bypass import CloudflareBypassService
+            return CloudflareBypassService.is_cloudflare_block(html=html)
+        except Exception:
+            return False
+
+    async def _nodriver_fallback(
+        self,
+        url: str,
+        take_screenshot: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Try fetching with nodriver when Playwright is blocked by Cloudflare.
+
+        Returns a scrape result dict on success, None on failure.
+        """
+        if not settings.CLOUDFLARE_BYPASS_ENABLED or not settings.NODRIVER_ENABLED:
+            return None
+
+        from app.services.cloudflare_bypass import cloudflare_bypass_service
+
+        logger.info(f"Escalating to nodriver (Tier 2) for {url}")
+        result = await cloudflare_bypass_service.nodriver_fetch(url)
+
+        if not result or result["status"] != "success":
+            return None
+
+        html = result["html"]
+
+        # Parse the nodriver HTML through our standard extractors
+        metadata = self.extract_metadata(html)
+        article_content = self.extract_article_content(html)
+        raw_content = article_content or ""
+
+        # If we still got no useful content, strip HTML for raw text
+        if not raw_content or len(raw_content) < 100:
+            soup = BeautifulSoup(html, "lxml")
+            body = soup.find("body")
+            if body:
+                for tag in body(["script", "style", "nav", "footer", "header", "aside"]):
+                    tag.decompose()
+                raw_content = body.get_text(separator=" ", strip=True)
+
+        if not raw_content or len(raw_content) < 50:
+            logger.warning(f"nodriver fetched {url} but content too short")
+            return None
+
+        logger.info(
+            f"nodriver success for {url}: {len(raw_content)} chars"
+        )
+
+        return {
+            "status": "success",
+            "url": url,
+            "raw_html": html,
+            "raw_content": raw_content,
+            "metadata": metadata,
+            "screenshot": None,
+            "fetched_at": datetime.utcnow().isoformat(),
+        }
+
     async def _recreate_context(self):
         """Close old context and create a new one with fresh UA/proxy."""
         if self.context:
@@ -126,6 +228,12 @@ class WebScraperService:
 
     async def initialize(self):
         """Initialize Playwright browser with configured engine."""
+        # If browser exists but context was lost, just recreate context
+        if self.browser is not None and self.context is None:
+            logger.warning("Browser exists but context is None, recreating context...")
+            self.context = await self._create_context()
+            return
+
         if self.browser is None:
             self._playwright = await async_playwright().start()
 
@@ -305,20 +413,82 @@ class WebScraperService:
             logger.info(f"Navigating to {url}")
             response = await page.goto(url, timeout=timeout, wait_until='domcontentloaded')
 
-            if not response or response.status != 200:
-                status_code = response.status if response else 'No response'
+            status_code = response.status if response else None
+
+            if not response:
+                return {
+                    'status': 'error',
+                    'error': 'No response',
+                    'raw_html': None,
+                    'raw_content': None,
+                    'metadata': {}
+                }
+
+            # For 401/403: wait for JS challenge pages to resolve before giving up
+            if status_code in [401, 403]:
+                logger.info(f"HTTP {status_code} from {url}, waiting for JS challenge resolution...")
+                resolved = await self._wait_for_challenge(page)
+
+                if not resolved:
+                    # Detect if this is specifically a Cloudflare block
+                    is_cf = await self._is_cloudflare_block(page, response)
+
+                    if is_cf and settings.CLOUDFLARE_BYPASS_ENABLED:
+                        # Cloudflare block — skip Playwright retry, escalate to nodriver
+                        logger.info(
+                            f"Cloudflare block detected for {url}, "
+                            "escalating to nodriver..."
+                        )
+                        await page.close()
+                        page = None
+                        nodriver_result = await self._nodriver_fallback(
+                            url, take_screenshot
+                        )
+                        if nodriver_result:
+                            return nodriver_result
+
+                        return {
+                            'status': 'error',
+                            'error': f'HTTP {status_code} (Cloudflare — nodriver also failed)',
+                            'raw_html': None,
+                            'raw_content': None,
+                            'metadata': {}
+                        }
+
+                    # Non-Cloudflare 403: retry with fresh Playwright context
+                    if retry_on_403:
+                        logger.info(f"Challenge not resolved, retrying {url} with fresh context...")
+                        await page.close()
+                        page = None
+                        await self._recreate_context()
+                        await asyncio.sleep(random.uniform(5.0, 8.0))
+                        return await self.scrape_url(url, wait_for_selector, timeout, take_screenshot, retry_on_403=False)
+
+                    # Second Playwright attempt also failed — try nodriver as last resort
+                    if settings.CLOUDFLARE_BYPASS_ENABLED and settings.NODRIVER_ENABLED:
+                        logger.info(
+                            f"Playwright retry failed for {url}, "
+                            "trying nodriver as last resort..."
+                        )
+                        await page.close()
+                        page = None
+                        nodriver_result = await self._nodriver_fallback(
+                            url, take_screenshot
+                        )
+                        if nodriver_result:
+                            return nodriver_result
+
+                    return {
+                        'status': 'error',
+                        'error': f'HTTP {status_code} (bot protection)',
+                        'raw_html': None,
+                        'raw_content': None,
+                        'metadata': {}
+                    }
+                logger.info(f"Challenge resolved for {url}")
+
+            elif status_code != 200:
                 logger.error(f"Failed to load {url}: HTTP {status_code}")
-
-                # Retry once with context recreation for 401/403 errors
-                if retry_on_403 and response and response.status in [401, 403]:
-                    logger.info(f"Retrying {url} after {response.status} error with fresh context...")
-                    await page.close()
-                    # Recreate context with new UA and next proxy
-                    await self._recreate_context()
-                    # Wait longer between retries
-                    await asyncio.sleep(random.uniform(5.0, 8.0))
-                    return await self.scrape_url(url, wait_for_selector, timeout, take_screenshot, retry_on_403=False)
-
                 return {
                     'status': 'error',
                     'error': f'HTTP {status_code}',
@@ -326,6 +496,12 @@ class WebScraperService:
                     'raw_content': None,
                     'metadata': {}
                 }
+
+            # Wait for network to settle (catch timeout gracefully for heavy pages)
+            try:
+                await page.wait_for_load_state('networkidle', timeout=10000)
+            except Exception:
+                logger.debug(f"networkidle timeout for {url}, continuing with available content")
 
             # Handle cookie banner
             await self.handle_cookie_banner(page)
@@ -386,7 +562,8 @@ class WebScraperService:
             }
 
         finally:
-            await page.close()
+            if page:
+                await page.close()
 
 
 # Singleton instance

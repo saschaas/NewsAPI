@@ -6,10 +6,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Stock News API — an AI-powered news aggregation system that scrapes websites/YouTube/RSS feeds, analyzes content with local LLMs (Ollama), extracts stock mentions with per-stock sentiment, and persists results to SQLite. It has a FastAPI backend and a React/TypeScript frontend.
 
+## Conda Environment
+
+This project uses a **conda environment** named `newsapi` with Python 3.11.
+
+```bash
+# Create the environment (first time only)
+conda create -n newsapi python=3.11 -y
+
+# Activate the environment (required before running any backend commands)
+conda activate newsapi
+
+# Install backend dependencies
+cd backend
+pip install -r requirements.txt
+playwright install chromium
+
+# Create .env from example
+cp .env.example .env
+
+# Create required directories
+mkdir -p data downloads
+
+# Initialize the database
+python -m app.init_db
+
+# Install frontend dependencies
+cd ../frontend
+npm install
+```
+
+All backend commands below assume the `newsapi` conda environment is active.
+
 ## Commands
 
 ### Backend (run from `backend/`)
 ```bash
+conda activate newsapi
+
 # Start dev server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
@@ -60,7 +94,7 @@ scraper → article_link_extractor → article_fetcher → analyzer → ner → 
 ### Layer Organization
 
 - **`agents/`** — LangGraph nodes. Each is an async function taking and returning `NewsProcessingState`. State flows through the entire pipeline as a single TypedDict.
-- **`services/`** — Stateful singletons (`web_scraper`, `ollama_service`, `rss_service`, `youtube_service`). The scraping service manages Playwright browser lifecycle, stealth injection, UA rotation, and proxy pool.
+- **`services/`** — Stateful singletons (`web_scraper`, `ollama_service`, `rss_service`, `youtube_service`, `cloudflare_bypass_service`). The scraping service manages Playwright browser lifecycle, stealth injection, UA rotation, and proxy pool.
 - **`models/`** — SQLAlchemy ORM models. `DataSource` has check constraints on `source_type`, `status`, `health_status`, and `last_fetch_status`.
 - **`schemas/`** — Pydantic schemas. Keep `Literal` types in schemas in sync with `CheckConstraint` values in models.
 - **`scheduler/`** — APScheduler with SQLite jobstore. Jobs call `process_news_article()` from `workflow.py`. Concurrency controlled by a semaphore (`MAX_CONCURRENT_FETCHES`).
@@ -74,6 +108,15 @@ The scraping service initializes a Playwright browser context with:
 3. Human behavior simulation (mouse movements, scrolling) after page load
 4. Proxy pool with round-robin rotation
 5. On 403: recreates the entire context (new UA + next proxy) before retry
+
+### Cloudflare Bypass (`services/cloudflare_bypass.py`)
+
+A tiered system for bypassing Cloudflare and similar bot protection:
+- **Tier 1 — curl_cffi**: Lightweight HTTP with browser TLS fingerprint impersonation (JA3/JA4). Used in `rss_service.fetch_entry_content()` as the primary lightweight fetch. Injects cached `cf_clearance` cookies when available.
+- **Tier 2 — nodriver**: WebDriver-free Chrome controller via CDP (no Selenium traces). Launched as fallback when Playwright gets a Cloudflare 403. Solves JS challenges and Turnstile automatically. Harvested cookies are cached per-domain (configurable TTL) so subsequent requests use fast curl_cffi.
+- Cloudflare detection (`is_cloudflare_block()`) checks response headers (`server: cloudflare`, `cf-ray`) and HTML markers.
+- Per-domain asyncio locks prevent concurrent nodriver solves for the same domain.
+- Config: `CLOUDFLARE_BYPASS_ENABLED`, `NODRIVER_ENABLED`, `NODRIVER_HEADLESS`, `CURL_CFFI_IMPERSONATE`, `CF_COOKIE_TTL_SECONDS`.
 
 ### Content Deduplication
 

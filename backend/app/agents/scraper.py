@@ -117,8 +117,9 @@ async def scraper_node(state: NewsProcessingState) -> NewsProcessingState:
         return state
 
     except Exception as e:
-        logger.error(f"Scraper node error: {e}")
-        state['errors'].append(f"Scraper exception: {str(e)}")
+        error_msg = str(e) or f"{type(e).__name__} (no message)"
+        logger.error(f"Scraper node error: {type(e).__name__}: {error_msg}")
+        state['errors'].append(f"Scraper exception: {error_msg}")
         state['status'] = 'error'
         state['stage'] = 'scraper_failed'
         return state

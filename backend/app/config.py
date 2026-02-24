@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     RSS_ENABLED: bool = True
     RSS_REQUEST_TIMEOUT: int = 30
 
+    # Cloudflare Bypass
+    CLOUDFLARE_BYPASS_ENABLED: bool = True    # Master switch for Cloudflare bypass
+    NODRIVER_ENABLED: bool = True             # Enable nodriver (Tier 2) fallback
+    NODRIVER_HEADLESS: bool = True            # Run nodriver Chrome headless
+    NODRIVER_TIMEOUT: int = 45                # Seconds to wait for challenge resolution
+    CURL_CFFI_IMPERSONATE: str = "chrome131"  # Browser to impersonate in TLS fingerprint
+    CF_COOKIE_TTL_SECONDS: int = 900          # 15 min cache for cf_clearance cookies
+
     # CORS (for local development)
     CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:5173"]
 
