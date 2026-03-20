@@ -12,6 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 from app.config import settings
 
 
+class RateLimitError(Exception):
+    """Raised when YouTube returns HTTP 429."""
+
+
 class YouTubeService:
     """Service for downloading and processing YouTube videos.
 
@@ -182,39 +186,54 @@ class YouTubeService:
     def _extract_subtitles(self, info: dict) -> Optional[str]:
         """Try to extract subtitle text from yt_dlp video info dict."""
         # Manual subtitles are higher quality; try them first
-        for source_dict in [info.get('subtitles', {}), info.get('automatic_captions', {})]:
+        for source_key, limit_langs in [('subtitles', False), ('automatic_captions', True)]:
+            source_dict = info.get(source_key, {})
             if not source_dict:
                 continue
 
-            # Build a language priority order
+            # Build a language priority order — only de/en prefixes
             ordered_langs: List[str] = []
             for prefix in ['de', 'en']:
                 for lang_key in source_dict:
                     if lang_key.startswith(prefix) and lang_key not in ordered_langs:
                         ordered_langs.append(lang_key)
-            # Then any remaining language
-            for lang_key in source_dict:
-                if lang_key not in ordered_langs:
-                    ordered_langs.append(lang_key)
 
-            for lang in ordered_langs:
-                formats = source_dict[lang]
-                # Prefer json3 (cleanest parse), then vtt, then srt
-                for preferred_ext in ['json3', 'vtt', 'srt']:
-                    for fmt in formats:
-                        if fmt.get('ext') == preferred_ext:
-                            sub_url = fmt.get('url')
-                            if sub_url:
-                                text = self._fetch_subtitle_content(sub_url, preferred_ext)
-                                if text and len(text.strip()) > 50:
-                                    return text
+            # For manual subtitles, also try remaining languages as fallback.
+            # For automatic_captions, skip — there can be 50+ auto-translated
+            # languages and trying them all triggers YouTube rate limits.
+            if not limit_langs:
+                for lang_key in source_dict:
+                    if lang_key not in ordered_langs:
+                        ordered_langs.append(lang_key)
+
+            try:
+                for lang in ordered_langs:
+                    formats = source_dict[lang]
+                    # Prefer json3 (cleanest parse), then vtt, then srt
+                    for preferred_ext in ['json3', 'vtt', 'srt']:
+                        for fmt in formats:
+                            if fmt.get('ext') == preferred_ext:
+                                sub_url = fmt.get('url')
+                                if sub_url:
+                                    text = self._fetch_subtitle_content(sub_url, preferred_ext)
+                                    if text and len(text.strip()) > 50:
+                                        return text
+            except RateLimitError:
+                logger.warning("YouTube rate-limited subtitle requests, stopping subtitle fetch")
+                return None
+
         return None
 
     def _fetch_subtitle_content(self, url: str, ext: str) -> Optional[str]:
-        """Fetch raw subtitle file and convert to plain text."""
+        """Fetch raw subtitle file and convert to plain text.
+
+        Raises ``RateLimitError`` on HTTP 429 so callers can stop retrying.
+        """
         try:
             with httpx.Client(timeout=30.0, follow_redirects=True) as client:
                 response = client.get(url)
+                if response.status_code == 429:
+                    raise RateLimitError("YouTube subtitle rate limit (429)")
                 if response.status_code != 200:
                     logger.warning(f"Subtitle fetch failed: HTTP {response.status_code}")
                     return None
@@ -224,6 +243,8 @@ class YouTubeService:
                 return self._parse_json3_subtitles(raw_text)
             return self._parse_vtt_srt_subtitles(raw_text)
 
+        except RateLimitError:
+            raise
         except Exception as e:
             logger.error(f"Error fetching subtitle content: {e}")
             return None
