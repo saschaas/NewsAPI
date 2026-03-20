@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataSourcesApi } from '@/api/client';
 import type { DataSource, DataSourceCreate } from '@/types';
-import { format } from 'date-fns';
+import { formatShortDateTime } from '@/utils/date';
 import {
   CheckCircle,
   AlertCircle,
@@ -288,7 +288,7 @@ function SourceForm({
     id: source?.id,
     name: source?.name || '',
     url: source?.url || '',
-    source_type: source?.source_type || 'website',
+    source_type: source?.source_type || ('' as any),
     fetch_frequency_minutes: source?.fetch_frequency_minutes || 60,
     cron_expression: source?.cron_expression || null,
     extraction_instructions: source?.extraction_instructions || null,
@@ -308,6 +308,10 @@ function SourceForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.source_type) {
+      alert('Please select a source type.');
+      return;
+    }
     mutation.mutate(formData);
   };
 
@@ -348,7 +352,16 @@ function SourceForm({
             type="url"
             required
             value={formData.url}
-            onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+            onChange={(e) => {
+              const url = e.target.value;
+              const update: Partial<typeof formData> = { url };
+              // Auto-detect source type from URL (only if not already set)
+              if (!formData.source_type || formData.source_type === ('' as any)) {
+                if (/youtube\.com|youtu\.be/i.test(url)) update.source_type = 'youtube';
+                else if (/\/feed\b|\/rss\b|\.xml\b|atom/i.test(url)) update.source_type = 'rss';
+              }
+              setFormData({ ...formData, ...update });
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             placeholder="https://finance.yahoo.com/news, https://youtube.com/watch?v=..., or RSS feed URL"
           />
@@ -356,13 +369,15 @@ function SourceForm({
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Source Type
+            Source Type <span className="text-red-500">*</span>
           </label>
           <select
+            required
             value={formData.source_type}
             onChange={(e) => setFormData({ ...formData, source_type: e.target.value as 'website' | 'youtube' | 'rss' })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
           >
+            <option value="" disabled>— Select source type —</option>
             <option value="website">Website</option>
             <option value="youtube">YouTube</option>
             <option value="rss">RSS Feed</option>
@@ -608,7 +623,7 @@ function SourceCard({ source }: { source: DataSource }) {
             <span className="text-gray-600">Last Fetch:</span>
             <span className="ml-2 font-medium">
               {source.last_fetch_timestamp
-                ? format(new Date(source.last_fetch_timestamp), 'MMM d, h:mm a')
+                ? formatShortDateTime(source.last_fetch_timestamp)
                 : 'Never'}
             </span>
           </div>

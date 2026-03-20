@@ -53,10 +53,26 @@ async def create_source(
     # Check if URL already exists
     existing = db.query(DataSource).filter(DataSource.url == source.url).first()
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Data source with URL {source.url} already exists"
-        )
+        if existing.status == 'deleted':
+            # Reactivate the soft-deleted source with the new settings
+            for field, value in source.model_dump().items():
+                setattr(existing, field, value)
+            existing.status = 'active'
+            existing.health_status = 'pending'
+            existing.error_count = 0
+            existing.error_message = None
+            existing.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(existing)
+
+            from app.scheduler import scheduler_service
+            scheduler_service.add_source_job(existing)
+            return existing
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Data source with URL {source.url} already exists"
+            )
 
     # Create new source
     db_source = DataSource(

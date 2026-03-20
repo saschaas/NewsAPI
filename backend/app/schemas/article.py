@@ -33,6 +33,8 @@ class NewsArticleResponse(BaseModel):
     fetched_at: datetime
     is_high_impact: bool
     stock_mentions: list[StockMentionResponse] = []
+    source_name: Optional[str] = None
+    source_type: Optional[str] = None
 
     class Config:
         from_attributes = True

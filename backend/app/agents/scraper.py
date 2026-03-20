@@ -50,18 +50,56 @@ async def scraper_node(state: NewsProcessingState) -> NewsProcessingState:
             state['metadata'] = result['metadata']
 
         elif state['source_type'] == 'youtube':
-            # Process YouTube video
-            result = await youtube_service.process_youtube_url(state['source_url'])
+            if youtube_service.is_channel_or_playlist_url(state['source_url']):
+                # YouTube channel/playlist → list recent videos, treat as listing page
+                max_articles = state.get('max_articles', 20)
+                channel_result = await youtube_service.get_channel_videos(
+                    state['source_url'],
+                    max_results=max_articles,
+                )
 
-            if result['status'] != 'success':
-                state['errors'].append(f"YouTube processing failed: {result.get('error', 'Unknown error')}")
-                state['status'] = 'error'
-                state['stage'] = 'scraper_failed'
+                if channel_result['status'] != 'success':
+                    state['errors'].append(f"YouTube channel listing failed: {channel_result.get('error', 'Unknown error')}")
+                    state['status'] = 'error'
+                    state['stage'] = 'scraper_failed'
+                    return state
+
+                videos = channel_result.get('videos', [])
+                if not videos:
+                    state['errors'].append("YouTube channel returned no videos")
+                    state['status'] = 'error'
+                    state['stage'] = 'scraper_failed'
+                    return state
+
+                # Set up as listing page (same pattern as RSS)
+                state['is_listing_page'] = True
+                state['article_links'] = [v['url'] for v in videos]
+                state['current_article_index'] = 0
+                state['processed_articles'] = []
+                state['raw_content'] = f"YouTube channel: {channel_result.get('channel_title', '')} - {len(videos)} videos"
+                state['metadata'] = {
+                    'channel_title': channel_result.get('channel_title', ''),
+                    'video_count': len(videos),
+                }
+                state['stage'] = 'link_extraction_complete'
+                state['stage_timings']['scraper'] = time.time() - stage_start
+
+                logger.info(f"Scraper node: YouTube channel listed, {len(state['article_links'])} video links")
                 return state
 
-            state['transcript'] = result['transcript']
-            state['raw_content'] = result['transcript']
-            state['metadata'] = result['metadata']
+            else:
+                # Single YouTube video → extract transcript directly
+                result = await youtube_service.process_youtube_url(state['source_url'])
+
+                if result['status'] != 'success':
+                    state['errors'].append(f"YouTube processing failed: {result.get('error', 'Unknown error')}")
+                    state['status'] = 'error'
+                    state['stage'] = 'scraper_failed'
+                    return state
+
+                state['transcript'] = result['transcript']
+                state['raw_content'] = result['transcript']
+                state['metadata'] = result['metadata']
 
         elif state['source_type'] == 'rss':
             # Fetch RSS feed - bypasses browser-based scraping entirely

@@ -10,7 +10,7 @@ class NewsProcessingState(TypedDict):
     # Input
     source_id: int
     source_url: str
-    source_type: str  # 'website' or 'youtube'
+    source_type: str  # 'website', 'youtube', or 'rss'
     extraction_instructions: Optional[str]  # Optional user instructions for extraction
     max_articles: int  # Max articles to process from a listing page
 

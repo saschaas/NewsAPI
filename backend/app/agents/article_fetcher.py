@@ -2,7 +2,7 @@ import time
 from loguru import logger
 
 from app.agents.state import NewsProcessingState
-from app.services import web_scraper, rss_service
+from app.services import web_scraper, rss_service, youtube_service
 from app.utils import generate_content_hash, normalize_content
 
 
@@ -36,30 +36,45 @@ async def article_fetcher_node(state: NewsProcessingState) -> NewsProcessingStat
         article_url = article_links[current_index]
         logger.info(f"Article Fetcher: Fetching article {current_index + 1}/{len(article_links)}: {article_url}")
 
-        # Try lightweight HTTP fetch first (no browser overhead)
-        lightweight_result = await rss_service.fetch_entry_content(article_url)
-        if lightweight_result:
-            result = lightweight_result
-            logger.info(f"Article Fetcher: Lightweight HTTP fetch succeeded for {article_url}")
+        # Route to the right fetcher based on URL type
+        if youtube_service.is_video_url(article_url):
+            # YouTube video → extract transcript via subtitles
+            yt_result = await youtube_service.get_video_transcript(article_url)
+
+            if yt_result['status'] != 'success':
+                logger.warning(f"Failed to get YouTube transcript for {article_url}: {yt_result.get('error')}")
+                state['current_article_index'] += 1
+                state['stage'] = 'article_fetch_failed'
+                state['stage_timings'][f'article_fetcher_{current_index}'] = time.time() - stage_start
+                return state
+
+            state['raw_html'] = None
+            state['raw_content'] = yt_result['transcript']
+            state['metadata'] = yt_result['metadata']
         else:
-            # Fall back to browser-based scraping
-            result = await web_scraper.scrape_url(
-                article_url,
-                retry_on_403=True  # Enable retry for 403 errors
-            )
+            # Website article → try lightweight HTTP fetch, then browser
+            lightweight_result = await rss_service.fetch_entry_content(article_url)
+            if lightweight_result:
+                result = lightweight_result
+                logger.info(f"Article Fetcher: Lightweight HTTP fetch succeeded for {article_url}")
+            else:
+                # Fall back to browser-based scraping
+                result = await web_scraper.scrape_url(
+                    article_url,
+                    retry_on_403=True  # Enable retry for 403 errors
+                )
 
-        if result['status'] != 'success':
-            logger.warning(f"Failed to fetch article {article_url}: {result.get('error')}")
-            # Skip this article and move to next
-            state['current_article_index'] += 1
-            state['stage'] = 'article_fetch_failed'
-            state['stage_timings'][f'article_fetcher_{current_index}'] = time.time() - stage_start
-            return state
+            if result['status'] != 'success':
+                logger.warning(f"Failed to fetch article {article_url}: {result.get('error')}")
+                # Skip this article and move to next
+                state['current_article_index'] += 1
+                state['stage'] = 'article_fetch_failed'
+                state['stage_timings'][f'article_fetcher_{current_index}'] = time.time() - stage_start
+                return state
 
-        # Update state with article content
-        state['raw_html'] = result['raw_html']
-        state['raw_content'] = result['raw_content']
-        state['metadata'] = result['metadata']
+            state['raw_html'] = result['raw_html']
+            state['raw_content'] = result['raw_content']
+            state['metadata'] = result['metadata']
 
         # Generate content hash for this article
         if state['raw_content']:

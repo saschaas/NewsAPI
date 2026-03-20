@@ -52,6 +52,8 @@ export interface NewsArticle {
   fetched_at: string;
   is_high_impact: boolean;
   stock_mentions: StockMention[];
+  source_name: string | null;
+  source_type: 'website' | 'youtube' | 'rss' | null;
 }
 
 export interface StockInfo {
@@ -60,6 +62,7 @@ export interface StockInfo {
   mention_count: number;
   avg_sentiment: number;
   latest_mention: string;
+  category: string | null;
 }
 
 export interface StockSentimentTrend {

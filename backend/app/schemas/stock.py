@@ -10,6 +10,7 @@ class StockInfo(BaseModel):
     mention_count: int
     avg_sentiment: float
     latest_mention: datetime
+    category: Optional[str] = None
 
 
 class StockSentimentTrend(BaseModel):

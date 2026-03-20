@@ -22,5 +22,14 @@ class NewsArticle(Base):
     raw_metadata_json = Column(Text, nullable=True)
 
     # Relationships
+    data_source = relationship("DataSource", lazy="joined")
     stock_mentions = relationship("StockMention", back_populates="article", cascade="all, delete-orphan")
     processing_logs = relationship("ProcessingLog", back_populates="article", cascade="all, delete-orphan")
+
+    @property
+    def source_name(self) -> str | None:
+        return self.data_source.name if self.data_source else None
+
+    @property
+    def source_type(self) -> str | None:
+        return self.data_source.source_type if self.data_source else None

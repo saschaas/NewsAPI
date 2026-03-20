@@ -1,12 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Rss, TrendingUp, Database, Settings, HelpCircle } from 'lucide-react';
+import { Home, Rss, BarChart3, Database, Settings, HelpCircle } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { cn } from '@/utils/cn';
 
 const navItems = [
   { to: '/', icon: Home, label: 'Dashboard' },
   { to: '/sources', icon: Rss, label: 'Sources' },
-  { to: '/stocks', icon: TrendingUp, label: 'Stocks' },
+  { to: '/market', icon: BarChart3, label: 'Market' },
   { to: '/database', icon: Database, label: 'Database' },
   { to: '/config', icon: Settings, label: 'Config' },
   { to: '/help', icon: HelpCircle, label: 'Help' },

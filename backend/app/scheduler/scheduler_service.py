@@ -5,7 +5,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.executors.pool import ThreadPoolExecutor
 from loguru import logger
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.config import settings
 from app.database import SessionLocal
@@ -150,7 +150,8 @@ class SchedulerService:
             logger.info(f"Source {source.id} is not active, skipping job creation")
             return
 
-        # Determine trigger
+        # Determine trigger and next_run_time
+        next_run = None
         if source.cron_expression:
             try:
                 trigger = CronTrigger.from_crontab(source.cron_expression)
@@ -159,18 +160,34 @@ class SchedulerService:
                 logger.error(f"Invalid cron expression for source {source.id}: {e}")
                 return
         else:
-            trigger = IntervalTrigger(minutes=source.fetch_frequency_minutes)
-            trigger_desc = f"every {source.fetch_frequency_minutes} minutes"
+            interval_minutes = source.fetch_frequency_minutes
+            trigger = IntervalTrigger(minutes=interval_minutes)
+            trigger_desc = f"every {interval_minutes} minutes"
+
+            # Calculate the correct next_run_time based on last_fetch_timestamp
+            # so that restarts don't push the schedule forward by a full interval
+            if source.last_fetch_timestamp:
+                expected_next = source.last_fetch_timestamp + timedelta(minutes=interval_minutes)
+                now = datetime.utcnow()
+                if expected_next <= now:
+                    # Overdue — run immediately
+                    next_run = now
+                    logger.info(f"Source {source.id} is overdue (last fetch: {source.last_fetch_timestamp}), scheduling immediate run")
+                else:
+                    next_run = expected_next
 
         # Add job
-        self.scheduler.add_job(
-            sync_fetch_source_job,
+        job_kwargs = dict(
             trigger=trigger,
             args=[source.id],
             id=job_id,
             name=f"Fetch: {source.name}",
-            replace_existing=True
+            replace_existing=True,
         )
+        if next_run is not None:
+            job_kwargs['next_run_time'] = next_run
+
+        self.scheduler.add_job(sync_fetch_source_job, **job_kwargs)
 
         logger.info(f"Added job for source {source.id} ({source.name}): {trigger_desc}")
 

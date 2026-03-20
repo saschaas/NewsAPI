@@ -1,13 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 import { articlesApi } from '@/api/client';
-import { format } from 'date-fns';
-import { ExternalLink, TrendingUp, TrendingDown, Minus, AlertCircle } from 'lucide-react';
+import { formatFullDateTime, formatShortDateTime } from '@/utils/date';
+import { ExternalLink, TrendingUp, TrendingDown, Minus, AlertCircle, Globe, Youtube, Rss } from 'lucide-react';
 import type { NewsArticle } from '@/types';
 
 function getSentimentIcon(score: number) {
   if (score > 0.3) return <TrendingUp className="w-4 h-4 text-green-600" />;
   if (score < -0.3) return <TrendingDown className="w-4 h-4 text-red-600" />;
   return <Minus className="w-4 h-4 text-gray-400" />;
+}
+
+function getSourceIcon(sourceType: string | null) {
+  switch (sourceType) {
+    case 'youtube': return <Youtube className="w-3.5 h-3.5" />;
+    case 'rss': return <Rss className="w-3.5 h-3.5" />;
+    default: return <Globe className="w-3.5 h-3.5" />;
+  }
 }
 
 function getSentimentColor(score: number) {
@@ -61,6 +69,12 @@ function NewsCard({ article }: { article: NewsArticle }) {
       {/* Footer */}
       <div className="flex items-center justify-between text-sm text-gray-500">
         <div className="flex items-center gap-4">
+          {article.source_name && (
+            <span className="inline-flex items-center gap-1.5 text-gray-600">
+              {getSourceIcon(article.source_type)}
+              {article.source_name}
+            </span>
+          )}
           {article.author && <span>{article.author}</span>}
           {article.main_topic && (
             <span className="px-2 py-1 bg-gray-100 rounded text-xs">
@@ -72,7 +86,7 @@ function NewsCard({ article }: { article: NewsArticle }) {
           {article.published_date ? (
             <div className="flex flex-col items-end">
               <time className="font-medium text-gray-700">
-                {format(new Date(article.published_date), 'MMM d, yyyy h:mm a')}
+                {formatFullDateTime(article.published_date)}
               </time>
               <span className="text-xs text-gray-400">
                 Published
@@ -81,7 +95,7 @@ function NewsCard({ article }: { article: NewsArticle }) {
           ) : (
             <div className="flex flex-col items-end">
               <time>
-                {format(new Date(article.fetched_at), 'MMM d, h:mm a')}
+                {formatShortDateTime(article.fetched_at)}
               </time>
               <span className="text-xs text-gray-400">
                 Fetched

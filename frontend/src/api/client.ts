@@ -85,10 +85,12 @@ export const articlesApi = {
   },
 };
 
-// Stocks
+// Stocks / Market entities
 export const stocksApi = {
-  list: async (limit = 50): Promise<StockInfo[]> => {
-    const { data } = await client.get('/stocks/', { params: { limit } });
+  list: async (limit = 50, category?: string): Promise<StockInfo[]> => {
+    const params: Record<string, any> = { limit };
+    if (category) params.category = category;
+    const { data } = await client.get('/stocks/', { params });
     return data;
   },
 
