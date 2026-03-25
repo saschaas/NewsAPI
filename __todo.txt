@@ -1,12 +1,28 @@
 
-  Better Alternatives to Consider:
 
-  1. Add stealth scripts to Playwright to hide automation signals (inject JavaScript to mask webdriver properties)
-  2. Use Firefox or WebKit instead of Chromium (different fingerprint)
-  3. Add human-like behavior: mouse movements, random scrolling, keystroke timing
-  4. Residential proxies (adds cost but significantly improves success rate)
-  5. Check if MarketWatch has an official API for news access (legitimate, sustainable approach)
-  6. Try their RSS feeds or alternative endpoints that might be less protected
+----------------------------------------------------------
+----------------------------------------------------------
+----------------------------------------------------------
+#Youtube Extract
+Can you please review the process for extracting Information from YouTube Videos and test them to make sure they work as expected. The ideo is to provide as data source a youotube channel to extract the most recent Videos for the day or to extract Information from a single Video. All Videos are related to the stock market, the generla market or infomration on politics related to the stock market. The idea is to extract the infromation from the Video and to provide back only the most important information of the Video with the main ideas, the Topics discussed, the Sentiment if bullish or bearish, the related stocks and the Information that could influence the market. The Videos don't have to include all These Information, but some may have all and some only one or some.
+Please make sure the Output Format Matches the expected Format by the tool, so the infomration can be processed further.
+So, please review this process and validate the correct working and correct the code if necessary. You can use playwright if needed. The starting page is: http://localhost:3000/sources for inputting a new data source.
 
-  My recommendation: Before switching tools, let me try adding stealth JavaScript injection to Playwright first. This is a common technique that masks automation properties and has a good success rate against many anti-bot systems. Would you like me to implement this approach
-   instead?
+I tested myself for the data source "Handelsblatt Youtube Kanal" which has different Videos on the stock market or political Events. There are currently 13 Videos on the channel for today.
+When testing this data source I got no result (tool running forever with some infomration on Redirects) and aborted the tool after 15 minutes. You can use this as starting Point for your testing.
+But before testing please make yourself familiar with the structure and logic of the tool and review the current implementation of the Video ectraction process to make sure it was implemented correctly to meet the Above Points.
+
+#NA values
+In the Stocks site, can you exclude the items where there is no stock  mentioned (i.e. N/A, None Mentioned, NO SPECIFIC STOCK TICKER, NONE). Please make sure that only stocks are in this list!
+
+#Rename Stocks site
+Can you rename the Stocks site to Market and not only Display stocks but also the categories you mentioned before in your test:
+What was filtered out (28 entries):
+  - Countries/orgs: EUROPEAN UNION (...), HUNGARY (...), UKRAINE (...), NATO, QATAR
+  - People: TRUMP, WASH (Kevin Wash)
+  - Non-stocks: FED, DAX, OIL, BTC, TELEGRAM, WHATSAPP, US-NOTENBANK (...)
+  - Fake/invented tickers: BRAND, BRND, QATR, KOMMANT
+
+Please make sure to structure the site so it is easy to navigate between the diffrent categories.
+Please make sure to test this after the implementation.
+

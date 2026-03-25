@@ -19,7 +19,14 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(find:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(conda:*)",
+      "Bash(node:*)",
+      "Bash(taskkill:*)",
+      "Bash(grep :8000:*)",
+      "Bash(netstat:*)",
+      "Bash(ollama pull:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

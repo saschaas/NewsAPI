@@ -65,3 +65,10 @@ async def system_status(db: Session = Depends(get_db)):
         global_pause=settings.GLOBAL_PAUSE,
         ollama_status=ollama_status
     )
+
+
+@router.get("/youtube/rate-limit")
+async def youtube_rate_limit_status():
+    """Get YouTube subtitle rate limit status"""
+    from app.services import youtube_service
+    return youtube_service.get_rate_limit_status()

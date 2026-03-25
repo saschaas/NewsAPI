@@ -1,9 +1,11 @@
 import time
 from loguru import logger
+from datetime import datetime, timedelta
 
 from app.agents.state import NewsProcessingState
 from app.services import web_scraper, rss_service, youtube_service
 from app.utils import generate_content_hash, normalize_content
+from app.config import settings
 
 
 async def article_fetcher_node(state: NewsProcessingState) -> NewsProcessingState:
@@ -51,6 +53,30 @@ async def article_fetcher_node(state: NewsProcessingState) -> NewsProcessingStat
             state['raw_html'] = None
             state['raw_content'] = yt_result['transcript']
             state['metadata'] = yt_result['metadata']
+
+            # Pre-set title, author, published_date from YouTube metadata
+            # so the analyzer doesn't have to extract them from transcript text
+            yt_meta = yt_result['metadata']
+            if yt_meta.get('title'):
+                state['title'] = yt_meta['title']
+            if yt_meta.get('author'):
+                state['author'] = yt_meta['author']
+            if yt_meta.get('upload_date'):
+                try:
+                    upload_dt = datetime.strptime(yt_meta['upload_date'], '%Y%m%d')
+                    state['published_date'] = upload_dt
+
+                    # Backup date filter: skip videos older than configured max age
+                    max_age = settings.YOUTUBE_MAX_VIDEO_AGE_DAYS
+                    cutoff = datetime.utcnow() - timedelta(days=max_age)
+                    if upload_dt < cutoff:
+                        logger.info(f"Skipping old YouTube video (uploaded {yt_meta['upload_date']}): {yt_meta.get('title', '')}")
+                        state['current_article_index'] += 1
+                        state['stage'] = 'article_fetch_failed'
+                        state['stage_timings'][f'article_fetcher_{current_index}'] = time.time() - stage_start
+                        return state
+                except (ValueError, TypeError):
+                    pass
         else:
             # Website article → try lightweight HTTP fetch, then browser
             lightweight_result = await rss_service.fetch_entry_content(article_url)
@@ -88,12 +114,15 @@ async def article_fetcher_node(state: NewsProcessingState) -> NewsProcessingStat
             return state
 
         # Reset analysis fields for this new article
-        state['title'] = ''
+        # For YouTube videos, title/author/published_date are pre-set from metadata above
+        is_youtube = youtube_service.is_video_url(article_url)
+        if not is_youtube:
+            state['title'] = ''
+            state['author'] = None
+            state['published_date'] = None
         state['content'] = ''
         state['summary'] = None
         state['main_topic'] = None
-        state['author'] = None
-        state['published_date'] = None
         state['is_high_impact'] = False
         state['stock_mentions'] = []
 

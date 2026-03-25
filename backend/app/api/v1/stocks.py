@@ -101,6 +101,7 @@ def _classify_entity(ticker: str, company_name: str) -> str | None:
 async def list_stocks(
     limit: int = 50,
     category: Optional[str] = Query(None, description="Filter by category: stocks, indices, crypto, commodities, central_banks, countries, organisations, people, currencies, other. Omit for all."),
+    from_date: Optional[datetime] = Query(None, description="Filter articles published after this date"),
     db: Session = Depends(get_db)
 ):
     """
@@ -108,7 +109,10 @@ async def list_stocks(
 
     Returns entities sorted by mention count, each with a `category` field.
     Use the `category` query parameter to filter by a specific category.
+    Use `from_date` to only include mentions from articles published after that date.
     """
+    from sqlalchemy import case
+
     # Base query: all non-empty ticker symbols
     base = db.query(
         StockMention.ticker_symbol,
@@ -121,7 +125,17 @@ async def list_stocks(
     ).filter(
         StockMention.ticker_symbol != None,  # noqa: E711
         StockMention.ticker_symbol != '',
-    ).group_by(
+    )
+
+    if from_date:
+        base = base.filter(
+            case(
+                (NewsArticle.published_date.isnot(None), NewsArticle.published_date),
+                else_=NewsArticle.fetched_at
+            ) >= from_date
+        )
+
+    base = base.group_by(
         StockMention.ticker_symbol,
         StockMention.company_name
     ).order_by(

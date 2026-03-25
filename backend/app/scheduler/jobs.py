@@ -131,8 +131,9 @@ async def cleanup_old_articles_job():
 
     db = SessionLocal()
     try:
-        # Get retention days from config
-        retention_days = get_config_value('data_retention_days', 30, db)
+        # Get retention days from config (default 180 = 6 months max display window)
+        from app.config import settings as app_settings
+        retention_days = get_config_value('data_retention_days', app_settings.DATA_RETENTION_DAYS, db)
         cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
 
         # Find old articles
@@ -171,7 +172,8 @@ async def cleanup_old_cache_job():
         from app.models import LLMCache
 
         # Get retention days from config
-        retention_days = get_config_value('data_retention_days', 30, db)
+        from app.config import settings as app_settings
+        retention_days = get_config_value('data_retention_days', app_settings.DATA_RETENTION_DAYS, db)
         cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
 
         # Find old cache entries

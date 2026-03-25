@@ -102,3 +102,12 @@ export interface SchedulerStatus {
   paused_jobs: number;
   global_pause: boolean;
 }
+
+export interface YouTubeRateLimitStatus {
+  is_rate_limited: boolean;
+  since: string | null;
+  estimated_reset: string | null;
+  seconds_remaining?: number;
+  last_success: string | null;
+  total_hits: number;
+}

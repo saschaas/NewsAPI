@@ -7,6 +7,7 @@ import type {
   HealthCheck,
   SystemStatus,
   SchedulerStatus,
+  YouTubeRateLimitStatus,
 } from '@/types';
 
 const API_BASE = '/api/v1';
@@ -87,9 +88,10 @@ export const articlesApi = {
 
 // Stocks / Market entities
 export const stocksApi = {
-  list: async (limit = 50, category?: string): Promise<StockInfo[]> => {
+  list: async (limit = 50, category?: string, from_date?: string): Promise<StockInfo[]> => {
     const params: Record<string, any> = { limit };
     if (category) params.category = category;
+    if (from_date) params.from_date = from_date;
     const { data } = await client.get('/stocks/', { params });
     return data;
   },
@@ -119,6 +121,11 @@ export const systemApi = {
 
   status: async (): Promise<SystemStatus> => {
     const { data } = await client.get('/status/');
+    return data;
+  },
+
+  youtubeRateLimit: async (): Promise<YouTubeRateLimitStatus> => {
+    const { data } = await client.get('/youtube/rate-limit');
     return data;
   },
 };

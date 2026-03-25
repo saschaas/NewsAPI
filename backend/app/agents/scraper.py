@@ -1,11 +1,13 @@
 import time
 from typing import Dict, Any
+from datetime import datetime, timedelta
 from loguru import logger
 
 from app.agents.state import NewsProcessingState
 from app.services import web_scraper, youtube_service, rss_service
 from app.utils import generate_content_hash, normalize_content
 from app.utils.llm_config import get_model_for_step, is_vision_model
+from app.config import settings
 
 
 async def scraper_node(state: NewsProcessingState) -> NewsProcessingState:
@@ -71,15 +73,49 @@ async def scraper_node(state: NewsProcessingState) -> NewsProcessingState:
                     state['stage'] = 'scraper_failed'
                     return state
 
+                # Filter videos by publish date (only recent videos)
+                max_age_days = settings.YOUTUBE_MAX_VIDEO_AGE_DAYS
+                cutoff = datetime.utcnow() - timedelta(days=max_age_days)
+                filtered_videos = []
+                for v in videos:
+                    upload_date_str = v.get('upload_date')
+                    ts = v.get('timestamp')
+                    if upload_date_str:
+                        try:
+                            upload_dt = datetime.strptime(upload_date_str, '%Y%m%d')
+                            if upload_dt < cutoff:
+                                logger.debug(f"Skipping old video: {v.get('title', '')} (uploaded {upload_date_str})")
+                                continue
+                        except (ValueError, TypeError):
+                            pass  # Can't parse date, include the video
+                    elif ts:
+                        try:
+                            upload_dt = datetime.utcfromtimestamp(int(ts))
+                            if upload_dt < cutoff:
+                                logger.debug(f"Skipping old video: {v.get('title', '')} (ts {ts})")
+                                continue
+                        except (ValueError, TypeError, OSError):
+                            pass
+                    filtered_videos.append(v)
+
+                if not filtered_videos:
+                    logger.info(f"No recent videos (last {max_age_days} days) from channel")
+                    state['status'] = 'success'
+                    state['stage'] = 'all_articles_finalized'
+                    state['stage_timings']['scraper'] = time.time() - stage_start
+                    return state
+
+                logger.info(f"Filtered to {len(filtered_videos)}/{len(videos)} recent videos (last {max_age_days} days)")
+
                 # Set up as listing page (same pattern as RSS)
                 state['is_listing_page'] = True
-                state['article_links'] = [v['url'] for v in videos]
+                state['article_links'] = [v['url'] for v in filtered_videos]
                 state['current_article_index'] = 0
                 state['processed_articles'] = []
-                state['raw_content'] = f"YouTube channel: {channel_result.get('channel_title', '')} - {len(videos)} videos"
+                state['raw_content'] = f"YouTube channel: {channel_result.get('channel_title', '')} - {len(filtered_videos)} videos"
                 state['metadata'] = {
                     'channel_title': channel_result.get('channel_title', ''),
-                    'video_count': len(videos),
+                    'video_count': len(filtered_videos),
                 }
                 state['stage'] = 'link_extraction_complete'
                 state['stage_timings']['scraper'] = time.time() - stage_start

@@ -53,10 +53,21 @@ async def list_articles(
         )
 
     if from_date:
-        query = query.filter(NewsArticle.fetched_at >= from_date)
+        # Filter by published_date with fallback to fetched_at
+        query = query.filter(
+            case(
+                (NewsArticle.published_date.isnot(None), NewsArticle.published_date),
+                else_=NewsArticle.fetched_at
+            ) >= from_date
+        )
 
     if to_date:
-        query = query.filter(NewsArticle.fetched_at <= to_date)
+        query = query.filter(
+            case(
+                (NewsArticle.published_date.isnot(None), NewsArticle.published_date),
+                else_=NewsArticle.fetched_at
+            ) <= to_date
+        )
 
     if high_impact is not None:
         query = query.filter(NewsArticle.is_high_impact == high_impact)

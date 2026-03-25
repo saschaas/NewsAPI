@@ -1,8 +1,36 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { articlesApi } from '@/api/client';
 import { formatFullDateTime, formatShortDateTime } from '@/utils/date';
 import { ExternalLink, TrendingUp, TrendingDown, Minus, AlertCircle, Globe, Youtube, Rss } from 'lucide-react';
+import { cn } from '@/utils/cn';
 import type { NewsArticle } from '@/types';
+
+// ---------------------------------------------------------------------------
+// Date range options
+// ---------------------------------------------------------------------------
+
+interface DateRange {
+  key: string;
+  label: string;
+  days: number;
+}
+
+const DATE_RANGES: DateRange[] = [
+  { key: '2d', label: 'Last 2 Days', days: 2 },
+  { key: '30d', label: 'Last 30 Days', days: 30 },
+  { key: '6m', label: 'Last 6 Months', days: 180 },
+];
+
+function getFromDate(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString();
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function getSentimentIcon(score: number) {
   if (score > 0.3) return <TrendingUp className="w-4 h-4 text-green-600" />;
@@ -117,19 +145,48 @@ function NewsCard({ article }: { article: NewsArticle }) {
 }
 
 export function Dashboard() {
+  const [dateRange, setDateRange] = useState('2d');
+  const selectedRange = DATE_RANGES.find((r) => r.key === dateRange) ?? DATE_RANGES[0];
+
   const { data: articles, isLoading, error } = useQuery({
-    queryKey: ['articles'],
-    queryFn: () => articlesApi.list({ limit: 50, sort: 'published_date', order: 'desc' }),
-    refetchInterval: 30000, // 30 seconds
+    queryKey: ['articles', dateRange],
+    queryFn: () =>
+      articlesApi.list({
+        limit: 50,
+        sort: 'published_date',
+        order: 'desc',
+        from_date: getFromDate(selectedRange.days),
+      }),
+    refetchInterval: 30000,
   });
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">News Feed</h2>
-        <p className="text-gray-600 mt-1">
-          Latest stock market news and analysis
-        </p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">News Feed</h2>
+          <p className="text-gray-600 mt-1">
+            Latest stock market news and analysis
+          </p>
+        </div>
+
+        {/* Date range selector */}
+        <div className="flex gap-2">
+          {DATE_RANGES.map((range) => (
+            <button
+              key={range.key}
+              onClick={() => setDateRange(range.key)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                dateRange === range.key
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50',
+              )}
+            >
+              {range.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {isLoading && (
@@ -150,7 +207,7 @@ export function Dashboard() {
       {articles && articles.length === 0 && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
           <p className="text-gray-600">
-            No articles yet. Add a data source to get started!
+            No articles found for the selected time range. Try expanding the date range or add a data source to get started!
           </p>
         </div>
       )}

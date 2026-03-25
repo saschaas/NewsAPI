@@ -1,7 +1,14 @@
-import { Menu, Pause, Play } from 'lucide-react';
+import { Menu, Pause, Play, Youtube } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { systemApi, schedulerApi } from '@/api/client';
+import { cn } from '@/utils/cn';
+
+function formatTimeRemaining(seconds: number): string {
+  if (seconds <= 0) return 'any moment';
+  const m = Math.ceil(seconds / 60);
+  return m === 1 ? '~1 min' : `~${m} min`;
+}
 
 export function Header() {
   const { toggleSidebar, wsConnected, globalPause, setGlobalPause } = useAppStore();
@@ -12,6 +19,13 @@ export function Header() {
     queryKey: ['system-status'],
     queryFn: systemApi.status,
     refetchInterval: 10000, // 10 seconds
+  });
+
+  // Fetch YouTube rate limit status
+  const { data: ytStatus } = useQuery({
+    queryKey: ['youtube-rate-limit'],
+    queryFn: systemApi.youtubeRateLimit,
+    refetchInterval: 15000, // 15 seconds
   });
 
   // Toggle global pause mutation
@@ -26,6 +40,8 @@ export function Header() {
   const handleTogglePause = () => {
     pauseMutation.mutate(!globalPause);
   };
+
+  const isYtLimited = ytStatus?.is_rate_limited ?? false;
 
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
@@ -72,6 +88,36 @@ export function Header() {
               </div>
             </div>
           )}
+
+          {/* YouTube Rate Limit Status */}
+          <div
+            className={cn(
+              'hidden md:flex items-center gap-2 text-sm px-2.5 py-1 rounded-lg',
+              isYtLimited
+                ? 'bg-amber-50 text-amber-700'
+                : 'text-gray-600',
+            )}
+            title={
+              isYtLimited
+                ? `Rate limited since ${ytStatus?.since ? new Date(ytStatus.since).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '?'}. Estimated reset in ${ytStatus?.seconds_remaining ? formatTimeRemaining(ytStatus.seconds_remaining) : '?'}.`
+                : ytStatus?.last_success
+                  ? `Last successful subtitle fetch: ${new Date(ytStatus.last_success).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`
+                  : 'No subtitle requests yet'
+            }
+          >
+            <Youtube className={cn('w-4 h-4', isYtLimited ? 'text-amber-600' : 'text-gray-400')} />
+            {isYtLimited ? (
+              <span className="font-medium">
+                Limited ({ytStatus?.seconds_remaining ? formatTimeRemaining(ytStatus.seconds_remaining) : '...'})
+              </span>
+            ) : (
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  ytStatus ? 'bg-green-500' : 'bg-gray-300'
+                }`}
+              />
+            )}
+          </div>
 
           {/* WebSocket Status */}
           <div className="flex items-center gap-2 text-sm">

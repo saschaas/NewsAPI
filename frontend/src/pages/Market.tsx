@@ -10,6 +10,28 @@ import { cn } from '@/utils/cn';
 import { formatDate, formatShortDateTime } from '@/utils/date';
 
 // ---------------------------------------------------------------------------
+// Date range options
+// ---------------------------------------------------------------------------
+
+interface DateRange {
+  key: string;
+  label: string;
+  days: number;
+}
+
+const DATE_RANGES: DateRange[] = [
+  { key: '2d', label: 'Last 2 Days', days: 2 },
+  { key: '30d', label: 'Last 30 Days', days: 30 },
+  { key: '6m', label: 'Last 6 Months', days: 180 },
+];
+
+function getFromDate(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString();
+}
+
+// ---------------------------------------------------------------------------
 // Category definitions
 // ---------------------------------------------------------------------------
 
@@ -218,18 +240,22 @@ function EntityCard({ entity, onMentionsClick }: { entity: StockInfo; onMentions
 
 export function Market() {
   const [activeCategory, setActiveCategory] = useState('all');
+  const [dateRange, setDateRange] = useState('2d');
   const [mentionsModal, setMentionsModal] = useState<{ ticker: string; companyName: string } | null>(null);
 
+  const selectedRange = DATE_RANGES.find((r) => r.key === dateRange) ?? DATE_RANGES[0];
+  const fromDate = getFromDate(selectedRange.days);
+
   const { data: entities, isLoading } = useQuery({
-    queryKey: ['market-entities', activeCategory],
-    queryFn: () => stocksApi.list(200, activeCategory === 'all' ? undefined : activeCategory),
+    queryKey: ['market-entities', activeCategory, dateRange],
+    queryFn: () => stocksApi.list(200, activeCategory === 'all' ? undefined : activeCategory, fromDate),
     refetchInterval: 30000,
   });
 
   // Count per category for the badges (use the "all" query for counts)
   const { data: allEntities } = useQuery({
-    queryKey: ['market-entities', 'all'],
-    queryFn: () => stocksApi.list(500),
+    queryKey: ['market-entities', 'all', dateRange],
+    queryFn: () => stocksApi.list(500, undefined, fromDate),
     refetchInterval: 30000,
   });
 
@@ -247,11 +273,31 @@ export function Market() {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Market</h2>
-        <p className="text-gray-600 mt-1">
-          Entities mentioned in news — stocks, indices, crypto, commodities, and more
-        </p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Market</h2>
+          <p className="text-gray-600 mt-1">
+            Entities mentioned in news — stocks, indices, crypto, commodities, and more
+          </p>
+        </div>
+
+        {/* Date range selector */}
+        <div className="flex gap-2">
+          {DATE_RANGES.map((range) => (
+            <button
+              key={range.key}
+              onClick={() => setDateRange(range.key)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                dateRange === range.key
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50',
+              )}
+            >
+              {range.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Category tabs */}
@@ -302,8 +348,8 @@ export function Market() {
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
           <p className="text-gray-600">
             {activeCategory === 'all'
-              ? 'No market entities yet. Add news sources to start tracking!'
-              : `No ${CATEGORIES.find((c) => c.key === activeCategory)?.label.toLowerCase() ?? 'entities'} found.`}
+              ? 'No market entities found for the selected time range. Try expanding the date range or add news sources to start tracking!'
+              : `No ${CATEGORIES.find((c) => c.key === activeCategory)?.label.toLowerCase() ?? 'entities'} found for the selected time range.`}
           </p>
         </div>
       )}
