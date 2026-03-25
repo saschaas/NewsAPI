@@ -76,16 +76,18 @@ async def analyzer_node(state: NewsProcessingState) -> NewsProcessingState:
         cached = await get_cached_analysis(state['content_hash'], 'analysis')
 
         if cached:
-            # Use cached result
-            state['title'] = cached.get('title', '')
+            # Use cached result — prefer pre-set YouTube metadata over cached LLM values
+            has_preset_title = state.get('title') and state['title'].strip()
+            state['title'] = state['title'] if has_preset_title else cached.get('title', '')
             state['content'] = state['raw_content']  # Keep original content
             state['summary'] = cached.get('summary')
             state['main_topic'] = cached.get('main_topic')
-            state['author'] = cached.get('author')
+            if not state.get('author'):
+                state['author'] = cached.get('author')
             state['is_high_impact'] = cached.get('is_high_impact', False)
 
-            # Parse published date
-            if cached.get('published_date'):
+            # Parse published date — keep pre-set value from YouTube metadata
+            if not state.get('published_date') and cached.get('published_date'):
                 try:
                     state['published_date'] = datetime.fromisoformat(cached['published_date'])
                 except:
@@ -109,11 +111,20 @@ IMPORTANT: Pay special attention to the user's instructions above when extractin
 particularly for the publication date/time and other metadata that may be mentioned.
 """
 
+        # Build metadata context for the prompt (helps LLM with YouTube transcripts)
+        metadata_context = ""
+        if state.get('title') and state['title'].strip():
+            metadata_context += f"\nKnown Title: {state['title']}"
+        if state.get('author'):
+            metadata_context += f"\nKnown Author: {state['author']}"
+        if state.get('published_date'):
+            metadata_context += f"\nKnown Published Date: {state['published_date'].isoformat()}"
+
         # Build prompt
-        prompt = f"""You are a financial news analyst. Extract the following information from the article.{user_instructions}
+        prompt = f"""You are a financial news analyst. Extract the following information from the article.{user_instructions}{metadata_context}
 
 Article Content:
-{state['raw_content'][:4000]}
+{state['raw_content'][:8000]}
 
 Extract:
 1. Title: The main headline (if not available, create a concise title)
@@ -157,29 +168,32 @@ Respond ONLY with valid JSON in this exact format:
             state['stage'] = 'analyzer_failed'
             return state
 
-        # Update state
-        state['title'] = analysis.get('title', 'Untitled')
+        # Update state — prefer pre-set YouTube metadata over LLM extraction
+        # article_fetcher pre-sets title/author/published_date for YouTube videos
+        has_preset_title = state.get('title') and state['title'].strip()
+        state['title'] = state['title'] if has_preset_title else analysis.get('title', 'Untitled')
         state['content'] = state['raw_content']
         state['summary'] = analysis.get('summary')
         state['main_topic'] = analysis.get('main_topic')
-        state['author'] = analysis.get('author') or state['metadata'].get('author')
+        if not state.get('author'):
+            state['author'] = analysis.get('author') or state['metadata'].get('author')
         state['is_high_impact'] = analysis.get('is_high_impact', False)
 
-        # Parse published date
-        published_str = analysis.get('published_date')
-        if published_str:
-            try:
-                state['published_date'] = datetime.fromisoformat(published_str.replace(' ', 'T'))
-            except:
-                # Try metadata fallback
-                meta_date = state['metadata'].get('article:published_time') or state['metadata'].get('publish_date')
-                if meta_date:
-                    try:
-                        state['published_date'] = datetime.fromisoformat(meta_date)
-                    except:
+        # Parse published date — keep pre-set value from YouTube metadata if available
+        if not state.get('published_date'):
+            published_str = analysis.get('published_date')
+            if published_str:
+                try:
+                    state['published_date'] = datetime.fromisoformat(published_str.replace(' ', 'T'))
+                except:
+                    meta_date = state['metadata'].get('article:published_time') or state['metadata'].get('publish_date')
+                    if meta_date:
+                        try:
+                            state['published_date'] = datetime.fromisoformat(meta_date)
+                        except:
+                            state['published_date'] = None
+                    else:
                         state['published_date'] = None
-                else:
-                    state['published_date'] = None
 
         # Cache the result
         await cache_analysis(state['content_hash'], 'analysis', analysis, model)

@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     # Processing
     MAX_CONCURRENT_FETCHES: int = 3
     MAX_ARTICLES_PER_SOURCE: int = 20
-    DATA_RETENTION_DAYS: int = 30
+    DATA_RETENTION_DAYS: int = 180
+    YOUTUBE_MAX_VIDEO_AGE_DAYS: int = 2
+    YOUTUBE_PLAYWRIGHT_FALLBACK: bool = True
     AUTO_DISABLE_THRESHOLD: int = 5
     GLOBAL_PAUSE: bool = False
 

@@ -38,26 +38,39 @@ async def ner_stock_node(state: NewsProcessingState) -> NewsProcessingState:
             logger.info(f"NER node: Used cached NER ({len(cached)} stocks)")
             return state
 
-        # Build prompt with strong emphasis on separation
+        # For YouTube videos with minimal content (no subtitles), include
+        # the video description which often contains explicit stock tickers
+        extra_context = ""
+        if state.get('source_type') == 'youtube' and state.get('metadata'):
+            desc = state['metadata'].get('description', '')
+            if desc and len(state.get('content', '')) < 500:
+                extra_context = f"\n\nVideo Description (may contain stock tickers and company names):\n{desc[:3000]}"
+
+        # Build prompt
         prompt = f"""You are a financial entity extraction specialist. Analyze this article and extract ALL stock mentions.
 
 Article:
 Title: {state['title']}
-Content: {state['content'][:4000]}
+Content: {state['content'][:8000]}{extra_context}
 
 For EACH stock mentioned:
 1. Extract: ticker symbol, company name, stock exchange (NYSE/NASDAQ/etc), market segment (Technology/Healthcare/etc)
 2. Analyze sentiment SPECIFICALLY AND ONLY for that stock (NOT general market sentiment)
 3. Provide a confidence score (0.0 to 1.0)
-4. Extract a relevant snippet that specifically mentions THIS stock
+4. Extract the KEY SUPPORTING POINTS or thesis for this stock — what are the main reasons or arguments mentioned? Include price targets, catalysts, earnings data, growth metrics, or any specific reasons given for why the stock is bullish or bearish. This goes into context_snippet.
+5. Set is_sponsored to true if the stock is a PAID SPONSOR — look for phrases like "sponsored by", "disseminated on behalf of", "paid promotion", "sponsor segment", "sponsored content". Otherwise set to false.
 
 CRITICAL INSTRUCTIONS:
+- Extract ALL stocks discussed in the article, not just the main one
 - If multiple stocks are mentioned, keep their information COMPLETELY SEPARATE
 - DO NOT mix sentiment between different stocks
 - Sentiment must be specific to EACH stock based on what the article says about THAT stock
 - If the article mentions "Apple is doing well but Microsoft is struggling", Apple gets positive sentiment and Microsoft gets negative
 - Sentiment score: -1.0 (very negative) to +1.0 (very positive)
 - Sentiment label: very_negative, negative, neutral, positive, very_positive
+- If you cannot identify the stock ticker symbol for a mentioned company or entity, use "n/a" as the ticker_symbol value
+- The context_snippet MUST contain the key supporting arguments or thesis, not just a generic mention
+- EXCLUDE stocks that are ONLY mentioned as paid sponsors/advertisements with no actual analysis
 
 If NO stocks are mentioned, return: {{"stocks": []}}
 
@@ -72,7 +85,8 @@ Respond ONLY with valid JSON object:
       "sentiment_score": 0.75,
       "sentiment_label": "positive",
       "confidence_score": 0.92,
-      "context_snippet": "Apple's Q4 earnings exceeded expectations with strong iPhone sales..."
+      "context_snippet": "Beat Q4 earnings with revenue up 12% YoY. iPhone sales grew 18% driven by AI features. Management raised guidance citing strong services revenue.",
+      "is_sponsored": false
     }}
   ]
 }}"""
@@ -100,14 +114,11 @@ Respond ONLY with valid JSON object:
 
         # Handle different response formats
         if isinstance(stock_mentions, dict):
-            # LLM wraps the array in an object — find the list value
-            # Try known keys first, then fall back to first list value
             for key in ('stocks', 'mentions', 'stock_mentions', 'results'):
                 if key in stock_mentions and isinstance(stock_mentions[key], list):
                     stock_mentions = stock_mentions[key]
                     break
             else:
-                # Fall back: use the first value that is a list
                 for value in stock_mentions.values():
                     if isinstance(value, list):
                         stock_mentions = value
@@ -121,7 +132,6 @@ Respond ONLY with valid JSON object:
             logger.error(f"NER response is not a list after parsing: {type(stock_mentions)}")
             state['stock_mentions'] = []
         else:
-            # Validate each stock mention
             validated_mentions = []
             for mention in stock_mentions:
                 if not isinstance(mention, dict):
@@ -130,13 +140,36 @@ Respond ONLY with valid JSON object:
                 # Ensure required fields
                 if not mention.get('ticker_symbol') or not mention.get('company_name'):
                     continue
+                ticker_val = str(mention['ticker_symbol']).strip().upper()
+                # Remove leading $ if present (e.g. "$AAPL" → "AAPL")
+                ticker_clean = ticker_val.lstrip('$')
+
+                # Reject invalid tickers
+                if ticker_clean in ('', 'NONE', 'NULL', 'UNKNOWN', 'N/A', 'NA', 'STOCK'):
+                    continue
+                # Reject pure numbers (e.g. "$6" from "This $6 Stock")
+                if ticker_clean.replace('.', '').isdigit():
+                    continue
+                # Reject tickers with spaces (e.g. "$6 STOCK")
+                if ' ' in ticker_clean:
+                    continue
+                # Reject tickers that are too long (valid tickers are 1-5 chars)
+                if len(ticker_clean) > 5:
+                    continue
+                # Reject tickers without any letters
+                if not any(c.isalpha() for c in ticker_clean):
+                    continue
+
+                # Skip sponsored stocks (only mentioned as paid ads, no real analysis)
+                if mention.get('is_sponsored', False):
+                    logger.info(f"  Excluding sponsored stock: {ticker_val} ({mention.get('company_name')})")
+                    continue
 
                 # Validate sentiment score
                 sentiment_score = mention.get('sentiment_score', 0.0)
                 if not isinstance(sentiment_score, (int, float)):
                     sentiment_score = 0.0
                 else:
-                    # Clamp to [-1, 1]
                     sentiment_score = max(-1.0, min(1.0, float(sentiment_score)))
 
                 # Validate confidence score
@@ -147,14 +180,14 @@ Respond ONLY with valid JSON object:
                     confidence = max(0.0, min(1.0, float(confidence)))
 
                 validated_mention = {
-                    'ticker_symbol': str(mention['ticker_symbol']).upper().strip(),
+                    'ticker_symbol': ticker_clean,
                     'company_name': str(mention['company_name']).strip(),
                     'stock_exchange': mention.get('stock_exchange', '').strip() or None,
                     'market_segment': mention.get('market_segment', '').strip() or None,
                     'sentiment_score': sentiment_score,
                     'sentiment_label': mention.get('sentiment_label', 'neutral'),
                     'confidence_score': confidence,
-                    'context_snippet': mention.get('context_snippet', '')[:500]  # Limit length
+                    'context_snippet': mention.get('context_snippet', '')[:500]
                 }
 
                 validated_mentions.append(validated_mention)
@@ -179,7 +212,6 @@ Respond ONLY with valid JSON object:
     except Exception as e:
         logger.error(f"NER node error: {e}")
         state['errors'].append(f"NER exception: {str(e)}")
-        # Don't fail the whole workflow for NER errors, just set empty stocks
         state['stock_mentions'] = []
         state['stage'] = 'ner_complete'
         state['stage_timings']['ner'] = time.time() - stage_start
