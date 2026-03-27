@@ -30,7 +30,8 @@ class OllamaService:
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
         format: Optional[str] = "json",
-        images: Optional[list[str]] = None
+        images: Optional[list[str]] = None,
+        num_ctx: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Generate completion from Ollama (supports both text and vision models)
@@ -42,18 +43,23 @@ class OllamaService:
             temperature: Sampling temperature
             format: Response format ('json' or None)
             images: Optional list of base64-encoded images (for vision models)
+            num_ctx: Optional context window size in tokens
 
         Returns:
             Response dict or None if error
         """
         try:
+            options = {
+                "temperature": temperature
+            }
+            if num_ctx:
+                options["num_ctx"] = num_ctx
+
             payload = {
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
-                "options": {
-                    "temperature": temperature
-                }
+                "options": options
             }
 
             if system_prompt:

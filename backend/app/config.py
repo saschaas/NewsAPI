@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     OLLAMA_MODEL_ANALYSIS: str = "llama3.1"
     OLLAMA_MODEL_NER: str = "llama3.1"
     OLLAMA_MODEL_WHISPER: str = "whisper"
-    OLLAMA_TIMEOUT: int = 300  # seconds
+    OLLAMA_TIMEOUT: int = 600  # seconds (increased for longer content processing)
 
     # Processing
     MAX_CONCURRENT_FETCHES: int = 3
@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     YOUTUBE_PLAYWRIGHT_FALLBACK: bool = True
     AUTO_DISABLE_THRESHOLD: int = 5
     GLOBAL_PAUSE: bool = False
+
+    # LLM Content Limits
+    LLM_MAX_CONTENT_CHARS: int = 30000   # Max chars of content sent to LLM (was hardcoded 8000)
+    LLM_NUM_CTX: int = 16384             # Ollama context window (tokens) — increase for longer content
 
     # Paths
     DOWNLOADS_DIR: str = "./downloads"

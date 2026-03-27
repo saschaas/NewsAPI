@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { articlesApi } from '@/api/client';
 import { formatFullDateTime, formatShortDateTime } from '@/utils/date';
-import { ExternalLink, TrendingUp, TrendingDown, Minus, AlertCircle, Globe, Youtube, Rss } from 'lucide-react';
+import { ExternalLink, TrendingUp, TrendingDown, Minus, AlertCircle, Globe, Youtube, Rss, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import type { NewsArticle } from '@/types';
 
@@ -53,6 +53,9 @@ function getSentimentColor(score: number) {
 }
 
 function NewsCard({ article }: { article: NewsArticle }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const hasDetails = article.stock_mentions.some((s) => s.context_snippet);
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
       {/* Header */}
@@ -70,12 +73,12 @@ function NewsCard({ article }: { article: NewsArticle }) {
 
       {/* Summary */}
       {article.summary && (
-        <p className="text-gray-700 mb-4 line-clamp-2">{article.summary}</p>
+        <p className="text-gray-700 mb-4">{article.summary}</p>
       )}
 
-      {/* Stock Mentions */}
+      {/* Stock Mentions - Ticker pills */}
       {article.stock_mentions.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
           {article.stock_mentions.map((stock) => (
             <div
               key={stock.id}
@@ -89,6 +92,37 @@ function NewsCard({ article }: { article: NewsArticle }) {
                 {stock.sentiment_score > 0 ? '+' : ''}
                 {stock.sentiment_score.toFixed(2)}
               </span>
+            </div>
+          ))}
+          {hasDetails && (
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+            >
+              {showDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {showDetails ? 'Hide details' : 'Show details'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Stock Details (expandable) */}
+      {showDetails && article.stock_mentions.length > 0 && (
+        <div className="mb-4 space-y-3 bg-gray-50 rounded-lg p-4">
+          {article.stock_mentions.map((stock) => (
+            <div key={stock.id} className="border-l-3 pl-3" style={{ borderLeftWidth: '3px', borderLeftColor: stock.sentiment_score > 0.3 ? '#16a34a' : stock.sentiment_score < -0.3 ? '#dc2626' : '#9ca3af' }}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-semibold text-sm text-gray-900">{stock.ticker_symbol}</span>
+                <span className="text-sm text-gray-500">{stock.company_name}</span>
+                {stock.market_segment && (
+                  <span className="text-xs px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded">{stock.market_segment}</span>
+                )}
+              </div>
+              {stock.context_snippet ? (
+                <p className="text-sm text-gray-700 leading-relaxed">{stock.context_snippet}</p>
+              ) : (
+                <p className="text-sm text-gray-400 italic">No additional details available.</p>
+              )}
             </div>
           ))}
         </div>

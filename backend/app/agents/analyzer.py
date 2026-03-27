@@ -120,15 +120,16 @@ particularly for the publication date/time and other metadata that may be mentio
         if state.get('published_date'):
             metadata_context += f"\nKnown Published Date: {state['published_date'].isoformat()}"
 
-        # Build prompt
+        # Build prompt — use configurable content limit instead of hardcoded 8000
+        content_limit = settings.LLM_MAX_CONTENT_CHARS
         prompt = f"""You are a financial news analyst. Extract the following information from the article.{user_instructions}{metadata_context}
 
 Article Content:
-{state['raw_content'][:8000]}
+{state['raw_content'][:content_limit]}
 
 Extract:
 1. Title: The main headline (if not available, create a concise title)
-2. Summary: 2-3 sentence summary of the key points
+2. Summary: 3-5 sentence summary covering the main thesis, key stocks or topics discussed, and the most important takeaways. Be specific — include names, numbers, and conclusions rather than generic descriptions.
 3. Main Topic: Primary subject (e.g., "Earnings Report", "Market Analysis", "IPO", "Merger", "Regulatory News")
 4. Author: Author name (if available in the text)
 5. Published Date: When it was published in ISO format (YYYY-MM-DD HH:MM:SS) if available. Look carefully for date/time information in the article content.
@@ -150,7 +151,8 @@ Respond ONLY with valid JSON in this exact format:
             prompt=prompt,
             model=model,
             temperature=0.3,
-            format="json"
+            format="json",
+            num_ctx=settings.LLM_NUM_CTX
         )
 
         if not result or not result.get('response'):

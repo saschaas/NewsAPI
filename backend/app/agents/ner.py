@@ -7,6 +7,7 @@ from app.agents.analyzer import get_cached_analysis, cache_analysis
 from app.services import ollama_service
 from app.config import settings
 from app.utils.llm_config import get_model_for_step
+import re
 
 
 async def ner_stock_node(state: NewsProcessingState) -> NewsProcessingState:
@@ -38,38 +39,53 @@ async def ner_stock_node(state: NewsProcessingState) -> NewsProcessingState:
             logger.info(f"NER node: Used cached NER ({len(cached)} stocks)")
             return state
 
-        # For YouTube videos with minimal content (no subtitles), include
-        # the video description which often contains explicit stock tickers
+        # For YouTube videos, always include the video description as extra context
+        # Descriptions often list all stocks/tickers discussed in the video
         extra_context = ""
         if state.get('source_type') == 'youtube' and state.get('metadata'):
             desc = state['metadata'].get('description', '')
-            if desc and len(state.get('content', '')) < 500:
-                extra_context = f"\n\nVideo Description (may contain stock tickers and company names):\n{desc[:3000]}"
+            if desc:
+                extra_context = f"\n\nVideo Description (may contain stock tickers and company names — use to ensure ALL stocks are captured):\n{desc[:5000]}"
 
-        # Build prompt
+        # Hint from title about expected count (e.g., "5 Stocks Wall Street Is Buying")
+        title_hint = ""
+        title = state.get('title', '')
+        count_match = re.search(r'(\d+)\s+(?:stocks?|companies|picks?|tickers?)', title, re.IGNORECASE)
+        if count_match:
+            expected_count = count_match.group(1)
+            title_hint = f"\nIMPORTANT: The title mentions {expected_count} stocks — make sure you find and extract ALL {expected_count} of them. Read the ENTIRE content carefully."
+
+        # Build prompt — use configurable content limit
+        content_limit = settings.LLM_MAX_CONTENT_CHARS
         prompt = f"""You are a financial entity extraction specialist. Analyze this article and extract ALL stock mentions.
 
 Article:
 Title: {state['title']}
-Content: {state['content'][:8000]}{extra_context}
+Content: {state['content'][:content_limit]}{extra_context}
 
 For EACH stock mentioned:
 1. Extract: ticker symbol, company name, stock exchange (NYSE/NASDAQ/etc), market segment (Technology/Healthcare/etc)
 2. Analyze sentiment SPECIFICALLY AND ONLY for that stock (NOT general market sentiment)
 3. Provide a confidence score (0.0 to 1.0)
-4. Extract the KEY SUPPORTING POINTS or thesis for this stock — what are the main reasons or arguments mentioned? Include price targets, catalysts, earnings data, growth metrics, or any specific reasons given for why the stock is bullish or bearish. This goes into context_snippet.
-5. Set is_sponsored to true if the stock is a PAID SPONSOR — look for phrases like "sponsored by", "disseminated on behalf of", "paid promotion", "sponsor segment", "sponsored content". Otherwise set to false.
+4. Write a DETAILED context_snippet (MINIMUM 400 characters, aim for 500-800). This is the most important field. Structure it as:
+   - BUSINESS: What the company does in 1-2 sentences
+   - THESIS: Why this stock is being discussed — the main bull/bear case, catalyst, or reason for attention
+   - FINANCIALS: Key metrics — revenue, earnings, margins, growth rates, guidance, backlog, or any numbers mentioned
+   - PROS: Bullish arguments, growth drivers, competitive advantages, institutional buying
+   - CONS/RISKS: Bearish arguments, concerns, valuation risks, challenges (if mentioned)
+   - TARGETS: Price targets, analyst ratings, or expected upside/downside (if mentioned)
+   Write ALL of these sections into a flowing paragraph. Do NOT abbreviate or summarize too aggressively — include the specific numbers, percentages, and details from the article.
+5. Set is_sponsored to true ONLY if the stock is a PAID SPONSOR with phrases like "sponsored by", "paid promotion". Otherwise false.
 
 CRITICAL INSTRUCTIONS:
-- Extract ALL stocks discussed in the article, not just the main one
-- If multiple stocks are mentioned, keep their information COMPLETELY SEPARATE
-- DO NOT mix sentiment between different stocks
-- Sentiment must be specific to EACH stock based on what the article says about THAT stock
-- If the article mentions "Apple is doing well but Microsoft is struggling", Apple gets positive sentiment and Microsoft gets negative
+- You MUST read the ENTIRE content from beginning to end — stocks may be discussed anywhere{title_hint}
+- Extract ALL stocks discussed, not just the first few
+- Keep each stock's information COMPLETELY SEPARATE
+- Sentiment must be specific to EACH stock based on what is said about THAT stock
 - Sentiment score: -1.0 (very negative) to +1.0 (very positive)
 - Sentiment label: very_negative, negative, neutral, positive, very_positive
-- If you cannot identify the stock ticker symbol for a mentioned company or entity, use "n/a" as the ticker_symbol value
-- The context_snippet MUST contain the key supporting arguments or thesis, not just a generic mention
+- Use "n/a" as ticker_symbol if you cannot identify it
+- context_snippet MUST be at least 400 characters. Include ALL specific numbers, growth rates, revenue figures, and details discussed. Do not write generic summaries.
 - EXCLUDE stocks that are ONLY mentioned as paid sponsors/advertisements with no actual analysis
 
 If NO stocks are mentioned, return: {{"stocks": []}}
@@ -85,7 +101,7 @@ Respond ONLY with valid JSON object:
       "sentiment_score": 0.75,
       "sentiment_label": "positive",
       "confidence_score": 0.92,
-      "context_snippet": "Beat Q4 earnings with revenue up 12% YoY. iPhone sales grew 18% driven by AI features. Management raised guidance citing strong services revenue.",
+      "context_snippet": "Apple is a technology giant known for iPhone, Mac, and services with a $3T market cap. The stock is being discussed because institutional investors have been aggressively accumulating shares ahead of the AI product cycle. They beat Q4 earnings with revenue up 12% YoY to $94.9B, driven by iPhone sales growing 18% on AI features, while services revenue grew 24% to a record $23.1B. On the bull side, management raised full-year guidance, AI integration is driving upgrade cycles, and the installed base hit 2.2B active devices. On the bear side, China revenue declined 2%, regulatory pressure in the EU remains a concern with potential App Store changes, and the stock trades at 32x forward earnings which some consider stretched. Wall Street consensus is bullish with a median price target of $250, implying 15% upside, and 38 out of 45 analysts rate it a buy.",
       "is_sponsored": false
     }}
   ]
@@ -97,7 +113,8 @@ Respond ONLY with valid JSON object:
             prompt=prompt,
             model=model,
             temperature=0.2,  # Lower temperature for more consistent extraction
-            format="json"
+            format="json",
+            num_ctx=settings.LLM_NUM_CTX
         )
 
         if not result or not result.get('response'):
@@ -187,7 +204,7 @@ Respond ONLY with valid JSON object:
                     'sentiment_score': sentiment_score,
                     'sentiment_label': mention.get('sentiment_label', 'neutral'),
                     'confidence_score': confidence,
-                    'context_snippet': mention.get('context_snippet', '')[:500]
+                    'context_snippet': mention.get('context_snippet', '')[:1000]
                 }
 
                 validated_mentions.append(validated_mention)
